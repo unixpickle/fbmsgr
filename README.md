@@ -1,6 +1,6 @@
 # fbmsgr
 
-This will be a wrapper around [Facebook Messenger's](messenger.com) internal AJAX protocol. I hope it will make it possible to implement all sorts of Facebook bots. Below is a list of potential applications:
+This will be a wrapper around [Facebook Messenger's](https://messenger.com) internal AJAX protocol. I hope it will make it possible to implement all sorts of Facebook bots. Below is a list of potential applications:
 
  * Tracking your friends' Messenger activity.
  * Analyzing your conversations (e.g. keywords analysis)
