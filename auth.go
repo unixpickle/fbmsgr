@@ -3,11 +3,13 @@ package fbmsgr
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strconv"
+	"sync"
 
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
@@ -23,6 +25,11 @@ const (
 // messenger backend.
 type Session struct {
 	client *http.Client
+
+	userID string
+
+	fbDTSGLock sync.Mutex
+	fbDTSG     string
 }
 
 // Auth creates a new Session by authenticating with the
@@ -76,10 +83,22 @@ func Auth(user, password string) (*Session, error) {
 	}
 
 	if postRes.Request.URL.Path == "/" {
-		return &Session{client: client}, nil
+		return sessionForHomepage(client, postRes.Body)
 	}
 
 	return nil, errors.New("login failed")
+}
+
+func sessionForHomepage(c *http.Client, body io.Reader) (*Session, error) {
+	root, err := html.Parse(body)
+	if err != nil {
+		return nil, errors.New("parse homepage: " + err.Error())
+	}
+	userID, err := findJSField(root, "USER_ID")
+	if err != nil {
+		return nil, errors.New("find USER_ID: " + err.Error())
+	}
+	return &Session{client: c, userID: userID}, nil
 }
 
 func requestLoginCookies(c *http.Client, body *html.Node) error {
@@ -164,7 +183,7 @@ func findJSField(body *html.Node, field string) (string, error) {
 	expr := regexp.MustCompile("\"" + field + "\"(,|:)\"(.*?)\"")
 	match := expr.FindSubmatch(out.Bytes())
 	if match == nil {
-		return "", errors.New("could not locate identifier")
+		return "", errors.New("could not locate JS field")
 	}
 	return string(match[2]), nil
 }
