@@ -2,6 +2,7 @@ package fbmsgr
 
 import (
 	"errors"
+	"net/url"
 
 	"golang.org/x/net/html"
 )
@@ -34,4 +35,27 @@ func (s *Session) fetchDTSG() (string, error) {
 	}
 	s.fbDTSG = keyVal
 	return s.fbDTSG, nil
+}
+
+// commonParams generates a set of parameters which are
+// passed to most observed JSON endpoints.
+func (s *Session) commonParams() (url.Values, error) {
+	dtsg, err := s.fetchDTSG()
+	if err != nil {
+		return nil, err
+	}
+
+	reqParams := url.Values{}
+	reqParams.Add("__a", "1")
+	reqParams.Add("__af", "o")
+	reqParams.Add("__be", "-1")
+	reqParams.Add("__pc", "EXP1:messengerdotcom_pkg")
+	reqParams.Add("__req", "14")
+	reqParams.Add("__rev", "2643465")
+	reqParams.Add("__srp_t", "1477432416")
+	reqParams.Add("__user", s.userID)
+	reqParams.Add("client", "mercury")
+	reqParams.Add("fb_dtsg", dtsg)
+
+	return reqParams, nil
 }
