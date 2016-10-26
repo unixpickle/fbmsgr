@@ -2,6 +2,7 @@ package fbmsgr
 
 import (
 	"errors"
+	"io/ioutil"
 	"net/url"
 
 	"golang.org/x/net/html"
@@ -58,4 +59,24 @@ func (s *Session) commonParams() (url.Values, error) {
 	reqParams.Add("fb_dtsg", dtsg)
 
 	return reqParams, nil
+}
+
+// jsonForPost posts the form and returns the raw JSON
+// from the response.
+func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
+	resp, err := s.client.PostForm(url, params)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) < 9 {
+		return nil, errors.New("jsonForPost: response too short")
+	}
+	return body[9:], nil
 }
