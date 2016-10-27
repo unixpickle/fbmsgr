@@ -93,6 +93,11 @@ func Auth(user, password string) (*Session, error) {
 	return nil, errors.New("login failed")
 }
 
+// FBID returns the authenticated user's FBID.
+func (s *Session) FBID() string {
+	return s.userID
+}
+
 func sessionForHomepage(c *http.Client, body io.Reader) (*Session, error) {
 	root, err := html.Parse(body)
 	if err != nil {
