@@ -30,6 +30,10 @@ type Session struct {
 
 	fbDTSGLock sync.Mutex
 	fbDTSG     string
+
+	pollLock sync.Mutex
+	pollChan <-chan Event
+	pollErr  error
 }
 
 // Auth creates a new Session by authenticating with the

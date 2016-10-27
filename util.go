@@ -3,6 +3,7 @@ package fbmsgr
 import (
 	"errors"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 
 	"golang.org/x/net/html"
@@ -64,7 +65,16 @@ func (s *Session) commonParams() (url.Values, error) {
 // jsonForPost posts the form and returns the raw JSON
 // from the response.
 func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
-	resp, err := s.client.PostForm(url, params)
+	return jsonForResp(s.client.PostForm(url, params))
+}
+
+// jsonForGet runs a get and returns the raw JSON.
+func (s *Session) jsonForGet(url string) ([]byte, error) {
+	return jsonForResp(s.client.Get(url))
+}
+
+// jsonForResp returns the json for the response.
+func jsonForResp(resp *http.Response, err error) ([]byte, error) {
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -76,7 +86,7 @@ func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
 		return nil, err
 	}
 	if len(body) < 9 {
-		return nil, errors.New("jsonForPost: response too short")
+		return nil, errors.New("jsonForResp: response too short")
 	}
 	return body[9:], nil
 }
