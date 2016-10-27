@@ -35,8 +35,8 @@ func (s *Session) SendText(fbid, message string) error {
 }
 
 func randomMessageID() string {
-	res := ""
-	for i := 0; i < 19; i++ {
+	res := "6"
+	for i := 1; i < 18; i++ {
 		res += strconv.Itoa(rand.Intn(10))
 	}
 	return res
