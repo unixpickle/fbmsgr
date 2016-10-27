@@ -83,8 +83,7 @@ func (s *Session) poll(ch chan<- Event) {
 		return
 	}
 
-	var msgsRecv int
-	seq := 1
+	var seq int
 	for {
 		values := url.Values{}
 		values.Set("cap", "8")
@@ -94,7 +93,7 @@ func (s *Session) poll(ch chan<- Event) {
 		values.Set("idle", "0")
 		values.Set("isq", "243")
 		values.Set("msgr_region", "FRC")
-		values.Set("msgs_recv", strconv.Itoa(msgsRecv))
+		values.Set("msgs_recv", strconv.Itoa(seq))
 		values.Set("partition", "-2")
 		values.Set("pws", "fresh")
 		values.Set("qp", "y")
@@ -105,17 +104,18 @@ func (s *Session) poll(ch chan<- Event) {
 		values.Set("sticky_pool", pool)
 		values.Set("sticky_token", token)
 		u := "https://0-edge-chat.messenger.com/pull?" + values.Encode()
-		seq++
 		response, err := s.jsonForGet(u)
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 			continue
 		}
-		msgs, err := parseMessages(response)
+		msgs, newSeq, err := parseMessages(response)
+		if newSeq > 0 {
+			seq = newSeq
+		}
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 		} else {
-			msgsRecv += len(msgs)
 			s.dispatchMessages(ch, msgs)
 		}
 	}
@@ -266,15 +266,19 @@ func (s *Session) pollFailed(e error, ch chan<- Event) {
 
 // parseMessages extracts all of the "msg" payloads from a
 // polled event body.
-func parseMessages(data []byte) (list []map[string]interface{}, err error) {
+func parseMessages(data []byte) (list []map[string]interface{}, newSeq int, err error) {
 	reader := json.NewDecoder(bytes.NewBuffer(data))
 	for reader.More() {
 		var objVal struct {
 			Type     string                   `json:"t"`
+			Seq      int                      `json:"seq"`
 			Messages []map[string]interface{} `json:"ms"`
 		}
 		if err := reader.Decode(&objVal); err != nil {
-			return nil, err
+			return nil, 0, err
+		}
+		if objVal.Seq > newSeq {
+			newSeq = objVal.Seq
 		}
 		if objVal.Type == "msg" {
 			list = append(list, objVal.Messages...)
