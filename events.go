@@ -30,10 +30,16 @@ type MessageEvent struct {
 	Attachments []Attachment
 
 	// SenderFBID is the fbid of the sending user.
+	// This may be the current user, especially if the user
+	// sent the message from a different device.
 	SenderFBID string
 
 	// If non-empty, this specifies the group chat ID.
 	GroupThread string
+
+	// If non-empty, this specifies the other user in a
+	// one-on-one chat (as opposed to a group chat).
+	OtherUser string
 }
 
 // Events returns a channel of events.
@@ -125,6 +131,7 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 						MessageID string `json:"messageId"`
 						ThreadKey struct {
 							ThreadFBID string `json:"threadFbId"`
+							OtherUser  string `json:"otherUserFbId"`
 						} `json:"threadKey"`
 					} `json:"messageMetadata"`
 				} `json:"delta"`
@@ -142,6 +149,7 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 						Attachments: attachments,
 						SenderFBID:  deltaObj.Delta.Meta.Actor,
 						GroupThread: deltaObj.Delta.Meta.ThreadKey.ThreadFBID,
+						OtherUser:   deltaObj.Delta.Meta.ThreadKey.OtherUser,
 					}
 					ch <- evt
 				}
