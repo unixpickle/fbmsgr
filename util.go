@@ -1,6 +1,7 @@
 package fbmsgr
 
 import (
+	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"net/http"
@@ -89,4 +90,14 @@ func jsonForResp(resp *http.Response, err error) ([]byte, error) {
 		return nil, errors.New("jsonForResp: response too short")
 	}
 	return body[9:], nil
+}
+
+// putJSONIntoObject turns source into JSON, then
+// unmarshals it back into the destination.
+func putJSONIntoObject(source, dest interface{}) error {
+	encoded, err := json.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(encoded, &dest)
 }

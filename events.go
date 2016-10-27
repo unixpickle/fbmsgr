@@ -18,13 +18,22 @@ type Event interface{}
 
 // A MessageEvent is an Event containing a new message.
 type MessageEvent struct {
-	Body       string
+	// MessageID is a unique ID used to distinguish a message
+	// from others in a chat log.
+	MessageID string
+
+	// Body is the text in the message.
+	// It is "" if the message contains no text.
+	Body string
+
+	// Attachments contains the message's attachments.
+	Attachments []Attachment
+
+	// SenderFBID is the fbid of the sending user.
 	SenderFBID string
 
-	// TODO: information here about the group chat if there
-	// was one.
-
-	// TODO: information here about attachments.
+	// If non-empty, this specifies the group chat ID.
+	GroupThread string
 }
 
 // Events returns a channel of events.
@@ -109,18 +118,32 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 		case "delta":
 			var deltaObj struct {
 				Delta struct {
-					Body string `json:"body"`
-					Meta struct {
-						Actor string `json:"actorFbId"`
+					Body        string                   `json:"body"`
+					Attachments []map[string]interface{} `json:"attachments"`
+					Meta        struct {
+						Actor     string `json:"actorFbId"`
+						MessageID string `json:"messageId"`
+						ThreadKey struct {
+							ThreadFBID string `json:"threadFbId"`
+						} `json:"threadKey"`
 					} `json:"messageMetadata"`
 				} `json:"delta"`
 			}
 			if putJSONIntoObject(m, &deltaObj) == nil {
-				if deltaObj.Delta.Body != "" {
-					ch <- MessageEvent{
-						Body:       deltaObj.Delta.Body,
-						SenderFBID: deltaObj.Delta.Meta.Actor,
+				if len(deltaObj.Delta.Attachments) != 0 ||
+					deltaObj.Delta.Body != "" {
+					var attachments []Attachment
+					for _, a := range deltaObj.Delta.Attachments {
+						attachments = append(attachments, decodeAttachment(a))
 					}
+					evt := MessageEvent{
+						MessageID:   deltaObj.Delta.Meta.MessageID,
+						Body:        deltaObj.Delta.Body,
+						Attachments: attachments,
+						SenderFBID:  deltaObj.Delta.Meta.Actor,
+						GroupThread: deltaObj.Delta.Meta.ThreadKey.ThreadFBID,
+					}
+					ch <- evt
 				}
 			}
 		}
@@ -215,14 +238,4 @@ func parseMessages(data []byte) (list []map[string]interface{}, err error) {
 		}
 	}
 	return
-}
-
-// putJSONIntoObject turns source into JSON, then
-// unmarshals it back into the destination.
-func putJSONIntoObject(source, dest interface{}) error {
-	encoded, err := json.Marshal(source)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(encoded, &dest)
 }
