@@ -1,8 +1,10 @@
 package fbmsgr
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"math/rand"
 	"net/url"
 	"strconv"
 	"time"
@@ -12,8 +14,17 @@ const pollErrTimeout = time.Second * 5
 
 // An Event is a notification pushed to the client by the
 // server.
-type Event interface {
-	EventType() string
+type Event interface{}
+
+// A MessageEvent is an Event containing a new message.
+type MessageEvent struct {
+	Body       string
+	SenderFBID string
+
+	// TODO: information here about the group chat if there
+	// was one.
+
+	// TODO: information here about attachments.
 }
 
 // Events returns a channel of events.
@@ -72,31 +83,66 @@ func (s *Session) poll(ch chan<- Event) {
 		values.Set("sticky_pool", pool)
 		values.Set("sticky_token", token)
 		u := "https://0-edge-chat.messenger.com/pull?" + values.Encode()
-		_, err := s.jsonForGet(u)
+		seq++
+		response, err := s.jsonForGet(u)
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 			continue
 		}
-		// fmt.Println("got some data", string(response))
-		// TODO: process response here.
+		msgs, err := parseMessages(response)
+		if err != nil {
+			time.Sleep(pollErrTimeout)
+		} else {
+			msgsRecv += len(msgs)
+			s.dispatchMessages(ch, msgs)
+		}
+	}
+}
+
+func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{}) {
+	for _, m := range msgs {
+		t, ok := m["type"].(string)
+		if !ok {
+			continue
+		}
+		switch t {
+		case "delta":
+			var deltaObj struct {
+				Delta struct {
+					Body string `json:"body"`
+					Meta struct {
+						Actor string `json:"actorFbId"`
+					} `json:"messageMetadata"`
+				} `json:"delta"`
+			}
+			if putJSONIntoObject(m, &deltaObj) == nil {
+				if deltaObj.Delta.Body != "" {
+					ch <- MessageEvent{
+						Body:       deltaObj.Delta.Body,
+						SenderFBID: deltaObj.Delta.Meta.Actor,
+					}
+				}
+			}
+		}
 	}
 }
 
 func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string, err error) {
-	// https://0-edge-chat.messenger.com/pull?channel=p_100013975812075&seq=0&partition=-2&clientid=3342de8f&cb=anuk&idle=0&qp=y&cap=8&pws=fresh&isq=243&msgs_recv=0&uid=100013975812075&viewer_uid=100013975812075&request_batch=1&msgr_region=FRC&state=offline
 	values := url.Values{}
 	values.Set("cap", "8")
-	values.Set("cb", "anuk")
+	cbStr := ""
+	for i := 0; i < 4; i++ {
+		cbStr += string(byte(rand.Intn(26)) + 'a')
+	}
+	values.Set("cb", cbStr)
 	values.Set("channel", "p_"+s.userID)
 	values.Set("clientid", "3342de8f")
 	values.Set("idle", "0")
-	values.Set("isq", "243")
 	values.Set("msgr_region", "FRC")
 	values.Set("msgs_recv", "0")
 	values.Set("partition", "-2")
 	values.Set("pws", "fresh")
 	values.Set("qp", "y")
-	values.Set("request_batch", "1")
 	values.Set("seq", "0")
 	values.Set("state", "offline")
 	values.Set("uid", s.userID)
@@ -107,21 +153,17 @@ func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string,
 		return "", "", err
 	}
 	var respObj struct {
-		Batches []struct {
-			Type   string `json:"t"`
-			LbInfo *struct {
-				Sticky string `json:"sticky"`
-				Pool   string `json:"pool"`
-			} `json:"lb_info"`
-		} `json:"batches"`
+		Type   string `json:"t"`
+		LbInfo *struct {
+			Sticky string `json:"sticky"`
+			Pool   string `json:"pool"`
+		} `json:"lb_info"`
 	}
 	if err := json.Unmarshal(response, &respObj); err != nil {
 		return "", "", errors.New("parse init JSON: " + err.Error())
 	}
-	for _, batch := range respObj.Batches {
-		if batch.Type == "lb" && batch.LbInfo != nil {
-			return batch.LbInfo.Pool, batch.LbInfo.Sticky, nil
-		}
+	if respObj.Type == "lb" && respObj.LbInfo != nil {
+		return respObj.LbInfo.Pool, respObj.LbInfo.Sticky, nil
 	}
 	return "", "", errors.New("unexpected initial polling response")
 }
@@ -154,4 +196,33 @@ func (s *Session) pollFailed(e error, ch chan<- Event) {
 	s.pollErr = e
 	close(ch)
 	s.pollLock.Unlock()
+}
+
+// parseMessages extracts all of the "msg" payloads from a
+// polled event body.
+func parseMessages(data []byte) (list []map[string]interface{}, err error) {
+	reader := json.NewDecoder(bytes.NewBuffer(data))
+	for reader.More() {
+		var objVal struct {
+			Type     string                   `json:"t"`
+			Messages []map[string]interface{} `json:"ms"`
+		}
+		if err := reader.Decode(&objVal); err != nil {
+			return nil, err
+		}
+		if objVal.Type == "msg" {
+			list = append(list, objVal.Messages...)
+		}
+	}
+	return
+}
+
+// putJSONIntoObject turns source into JSON, then
+// unmarshals it back into the destination.
+func putJSONIntoObject(source, dest interface{}) error {
+	encoded, err := json.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(encoded, &dest)
 }
