@@ -42,6 +42,13 @@ type MessageEvent struct {
 	OtherUser string
 }
 
+// A BuddyEvent is an Event containing information about a
+// buddy's updated status.
+type BuddyEvent struct {
+	FBID       string
+	LastActive time.Time
+}
+
 // Events returns a channel of events.
 // This will start listening for events if no listener was
 // already running.
@@ -122,38 +129,66 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 		}
 		switch t {
 		case "delta":
-			var deltaObj struct {
-				Delta struct {
-					Body        string                   `json:"body"`
-					Attachments []map[string]interface{} `json:"attachments"`
-					Meta        struct {
-						Actor     string `json:"actorFbId"`
-						MessageID string `json:"messageId"`
-						ThreadKey struct {
-							ThreadFBID string `json:"threadFbId"`
-							OtherUser  string `json:"otherUserFbId"`
-						} `json:"threadKey"`
-					} `json:"messageMetadata"`
-				} `json:"delta"`
-			}
-			if putJSONIntoObject(m, &deltaObj) == nil {
-				if len(deltaObj.Delta.Attachments) != 0 ||
-					deltaObj.Delta.Body != "" {
-					var attachments []Attachment
-					for _, a := range deltaObj.Delta.Attachments {
-						attachments = append(attachments, decodeAttachment(a))
-					}
-					evt := MessageEvent{
-						MessageID:   deltaObj.Delta.Meta.MessageID,
-						Body:        deltaObj.Delta.Body,
-						Attachments: attachments,
-						SenderFBID:  deltaObj.Delta.Meta.Actor,
-						GroupThread: deltaObj.Delta.Meta.ThreadKey.ThreadFBID,
-						OtherUser:   deltaObj.Delta.Meta.ThreadKey.OtherUser,
-					}
-					ch <- evt
-				}
-			}
+			s.dispatchDelta(ch, m)
+		case "buddylist_overlay":
+			s.dispatchBuddylistOverlay(ch, m)
+		}
+	}
+}
+
+func (s *Session) dispatchDelta(ch chan<- Event, obj map[string]interface{}) {
+	var deltaObj struct {
+		Delta struct {
+			Body        string                   `json:"body"`
+			Attachments []map[string]interface{} `json:"attachments"`
+			Meta        struct {
+				Actor     string `json:"actorFbId"`
+				MessageID string `json:"messageId"`
+				ThreadKey struct {
+					ThreadFBID string `json:"threadFbId"`
+					OtherUser  string `json:"otherUserFbId"`
+				} `json:"threadKey"`
+			} `json:"messageMetadata"`
+		} `json:"delta"`
+	}
+
+	if putJSONIntoObject(obj, &deltaObj) != nil {
+		return
+	}
+	if len(deltaObj.Delta.Attachments) == 0 && deltaObj.Delta.Body == "" {
+		return
+	}
+
+	var attachments []Attachment
+	for _, a := range deltaObj.Delta.Attachments {
+		attachments = append(attachments, decodeAttachment(a))
+	}
+	evt := MessageEvent{
+		MessageID:   deltaObj.Delta.Meta.MessageID,
+		Body:        deltaObj.Delta.Body,
+		Attachments: attachments,
+		SenderFBID:  deltaObj.Delta.Meta.Actor,
+		GroupThread: deltaObj.Delta.Meta.ThreadKey.ThreadFBID,
+		OtherUser:   deltaObj.Delta.Meta.ThreadKey.OtherUser,
+	}
+	ch <- evt
+}
+
+func (s *Session) dispatchBuddylistOverlay(ch chan<- Event, obj map[string]interface{}) {
+	var deltaObj struct {
+		Overlay map[string]struct {
+			LastActive float64 `json:"la"`
+		} `json:"overlay"`
+	}
+
+	if putJSONIntoObject(obj, &deltaObj) != nil {
+		return
+	}
+
+	for user, info := range deltaObj.Overlay {
+		ch <- BuddyEvent{
+			FBID:       user,
+			LastActive: time.Unix(int64(info.LastActive), 0),
 		}
 	}
 }
