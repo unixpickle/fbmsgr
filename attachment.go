@@ -1,9 +1,6 @@
 package fbmsgr
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // These are attachment type IDs used by Messenger.
 const (
@@ -35,7 +32,6 @@ func decodeAttachment(raw map[string]interface{}) Attachment {
 	if err == nil {
 		return sticker
 	}
-	fmt.Println("jones", err)
 
 	var typeObj struct {
 		Mercury struct {
