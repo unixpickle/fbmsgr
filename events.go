@@ -84,13 +84,14 @@ func (s *Session) poll(ch chan<- Event) {
 	}
 
 	var seq int
+	startTime := time.Now().Unix()
 	for {
 		values := url.Values{}
 		values.Set("cap", "8")
 		values.Set("cb", "anuk")
 		values.Set("channel", "p_"+s.userID)
 		values.Set("clientid", "3342de8f")
-		values.Set("idle", "0")
+		values.Set("idle", strconv.FormatInt(time.Now().Unix()-startTime, 10))
 		values.Set("isq", "243")
 		values.Set("msgr_region", "FRC")
 		values.Set("msgs_recv", strconv.Itoa(seq))
