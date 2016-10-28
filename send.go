@@ -31,6 +31,22 @@ func (s *Session) SendGroupText(groupFBID, message string) (msgID string, err er
 	return s.sendMessage(reqParams)
 }
 
+// SendReadReceipt sends a read receipt to a group chat or
+// a chat with an individual user.
+func (s *Session) SendReadReceipt(fbid string) error {
+	url := BaseURL + "/ajax/mercury/change_read_status.php?dpr=1"
+	values, err := s.commonParams()
+	if err != nil {
+		return err
+	}
+	values.Set("ids["+fbid+"]", "true")
+	values.Set("shouldSendReadReceipt", "true")
+	values.Set("watermarkTimestamp", strconv.FormatInt(time.Now().UnixNano()/1000000, 10))
+	values.Set("commerce_last_message_type", "non_ad")
+	_, err = s.jsonForPost(url, values)
+	return err
+}
+
 func (s *Session) textMessageParams(body string) (url.Values, error) {
 	reqParams, err := s.commonParams()
 	if err != nil {
