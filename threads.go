@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 )
 
 // ThreadInfo stores information about a chat thread.
@@ -17,8 +18,7 @@ type ThreadInfo struct {
 	// OtherUserFBID is nil for group chats.
 	OtherUserFBID *string `json:"other_user_fbid"`
 
-	// Participants contains a list of FBIDs with "fbid:"
-	// prefixes tacked on.
+	// Participants contains a list of FBIDs.
 	Participants []string `json:"participants"`
 
 	// Snippet stores the last message sent in the thread.
@@ -51,8 +51,8 @@ type ParticipantInfo struct {
 // A ThreadListResult stores the result of listing the
 // user's chat threads.
 type ThreadListResult struct {
-	Threads      []ThreadInfo      `json:"threads"`
-	Participants []ParticipantInfo `json:"participants"`
+	Threads      []*ThreadInfo      `json:"threads"`
+	Participants []*ParticipantInfo `json:"participants"`
 }
 
 // Threads reads a range of the user's chat threads.
@@ -78,6 +78,11 @@ func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
 	}
 	if err := json.Unmarshal(body, &respObj); err != nil {
 		return nil, errors.New("parse json: " + err.Error())
+	}
+	for _, x := range respObj.Payload.Participants {
+		if strings.HasPrefix(x.FBID, "fbid:") {
+			x.FBID = x.FBID[5:]
+		}
 	}
 
 	return &respObj.Payload, nil
