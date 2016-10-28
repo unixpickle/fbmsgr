@@ -8,4 +8,13 @@ This will be a wrapper around [Facebook Messenger's](https://messenger.com) inte
 
 # Current status
 
-Currently, the API can get the correct cookies and authenticate with the Messenger website. Honestly, this was probably the hardest part of the entire implementation (knock on wood).
+Currently, the API is fairly reliable and can perform a bunch of basic functionalities. Here is a list of supported features (it may lag slightly behind the master branch):
+
+ * Send textual messages to groups or people
+ * Receive messages with attachments
+   * File, audio, and video attachments not yet supported.
+ * Send read receipts
+ * Receive events for incoming messages
+ * Receive events for friend "Last Active" updates
+ * Set chat text colors (to arbitrary RGB colors)
+ * List a user's threads.
