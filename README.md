@@ -12,7 +12,6 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 
  * Send textual messages to groups or people
  * Receive messages with attachments
-   * File, audio, and video attachments not yet supported.
  * Send read receipts
  * Receive events for incoming messages
  * Receive events for friend "Last Active" updates
@@ -22,8 +21,6 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 
 # TODO
 
- * Receiving attachments
-   * Audio attachments
  * Typing events (sending and receiving)
  * Emoji/sticker transmission
  * Sending attachments
