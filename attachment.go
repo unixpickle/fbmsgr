@@ -6,6 +6,7 @@ import "errors"
 const (
 	ImageAttachmentType   = "photo"
 	StickerAttachmentType = "sticker"
+	FileAttachmentType    = "file"
 )
 
 // An Attachment is an abstract non-textual entity
@@ -35,6 +36,10 @@ func decodeAttachment(raw map[string]interface{}) Attachment {
 	sticker, err := decodeStickerAttachment(raw)
 	if err == nil {
 		return sticker
+	}
+	file, err := decodeFileAttachment(raw)
+	if err == nil {
+		return file
 	}
 
 	var typeObj struct {
@@ -241,4 +246,46 @@ func (s *StickerAttachment) URL() string {
 // String returns a brief description of the attachment.
 func (s *StickerAttachment) String() string {
 	return "StickerAttachment<" + s.URL() + ">"
+}
+
+// A FileAttachment is an attachment for a raw file.
+type FileAttachment struct {
+	Name    string
+	FileURL string
+}
+
+func decodeFileAttachment(raw map[string]interface{}) (*FileAttachment, error) {
+	var obj struct {
+		Mercury struct {
+			Type string `json:"attach_type"`
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		} `json:"mercury"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	if obj.Mercury.Type != FileAttachmentType {
+		return nil, errors.New("unexpected type: " + obj.Mercury.Type)
+	}
+	return &FileAttachment{
+		Name:    obj.Mercury.Name,
+		FileURL: obj.Mercury.URL,
+	}, nil
+}
+
+// AttachmentType returns the internal attachment type for
+// file attachments.
+func (f *FileAttachment) AttachmentType() string {
+	return FileAttachmentType
+}
+
+// URL returns the file download URL.
+func (f *FileAttachment) URL() string {
+	return f.FileURL
+}
+
+// String returns a brief description of the attachment.
+func (f *FileAttachment) String() string {
+	return "FileAttachment<" + f.URL() + ">"
 }

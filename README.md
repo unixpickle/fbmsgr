@@ -24,7 +24,6 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 
  * Receiving attachments
    * Audio attachments
-   * File attachments
    * GIF attachments
  * Typing events (sending and receiving)
  * Emoji/sticker transmission
