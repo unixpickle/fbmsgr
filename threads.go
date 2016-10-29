@@ -28,8 +28,15 @@ type ThreadInfo struct {
 	UnreadCount  int `json:"unread_count"`
 	MessageCount int `json:"message_count"`
 
-	Timestamp       int64 `json:"timestamp"`
-	ServerTimestamp int64 `json:"server_timestamp"`
+	Timestamp       float64 `json:"timestamp"`
+	ServerTimestamp float64 `json:"server_timestamp"`
+}
+
+func (t *ThreadInfo) canonicalizeFBIDs() {
+	t.SnippetSender = stripFBIDPrefix(t.SnippetSender)
+	for i, p := range t.Participants {
+		t.Participants[i] = stripFBIDPrefix(p)
+	}
 }
 
 // ParticipantInfo stores information about a user.
@@ -83,10 +90,7 @@ func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
 		x.FBID = stripFBIDPrefix(x.FBID)
 	}
 	for _, x := range respObj.Payload.Threads {
-		x.SnippetSender = stripFBIDPrefix(x.SnippetSender)
-		for i, y := range x.Participants {
-			x.Participants[i] = stripFBIDPrefix(y)
-		}
+		x.canonicalizeFBIDs()
 	}
 
 	return &respObj.Payload, nil
@@ -139,4 +143,16 @@ func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
 		decoded = append(decoded, decodeAction(x))
 	}
 	return decoded, nil
+}
+
+// DeleteMessage deletes a message given its ID.
+func (s *Session) DeleteMessage(id string) error {
+	url := BaseURL + "/ajax/mercury/delete_messages.php?dpr=1"
+	values, err := s.commonParams()
+	if err != nil {
+		return err
+	}
+	values.Set("message_ids[0]", id)
+	_, err = s.jsonForPost(url, values)
+	return err
 }

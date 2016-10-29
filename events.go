@@ -62,6 +62,13 @@ type TypingEvent struct {
 	GroupThread string
 }
 
+// DeleteMessageEvent indicates that a message has been
+// deleted.
+type DeleteMessageEvent struct {
+	MessageIDs    []string
+	UpdatedThread *ThreadInfo
+}
+
 // Events returns a channel of events.
 // This will start listening for events if no listener was
 // already running.
@@ -148,6 +155,11 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 			s.dispatchBuddylistOverlay(ch, m)
 		case "ttyp", "typ":
 			s.dispatchTyping(ch, m)
+		case "messaging":
+			evt, _ := m["event"].(string)
+			if evt == "delete_messages" {
+				s.dispatchDelete(ch, m)
+			}
 		}
 	}
 }
@@ -230,6 +242,21 @@ func (s *Session) dispatchTyping(ch chan<- Event, m map[string]interface{}) {
 			SenderFBID: strconv.FormatInt(int64(obj.From), 10),
 			Typing:     obj.State == 1,
 		}
+	}
+}
+
+func (s *Session) dispatchDelete(ch chan<- Event, m map[string]interface{}) {
+	var obj struct {
+		IDs    []string    `json:"mids"`
+		Thread *ThreadInfo `json:"updated_thread"`
+	}
+	if putJSONIntoObject(m, &obj) != nil || obj.Thread == nil {
+		return
+	}
+	obj.Thread.canonicalizeFBIDs()
+	ch <- DeleteMessageEvent{
+		MessageIDs:    obj.IDs,
+		UpdatedThread: obj.Thread,
 	}
 }
 
