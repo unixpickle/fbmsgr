@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"strings"
+	"time"
 )
 
 // ThreadInfo stores information about a chat thread.
@@ -80,10 +80,57 @@ func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
 		return nil, errors.New("parse json: " + err.Error())
 	}
 	for _, x := range respObj.Payload.Participants {
-		if strings.HasPrefix(x.FBID, "fbid:") {
-			x.FBID = x.FBID[5:]
-		}
+		x.FBID = stripFBIDPrefix(x.FBID)
 	}
 
 	return &respObj.Payload, nil
+}
+
+// ActionLog reads the action backlog from a thread.
+//
+// The fbid parameter specifies the other user ID or the
+// group thread ID.
+//
+// The timestamp parameter specifies the timestamp of the
+// earliest action seen from the last call to ActionLog.
+// It may be the 0 time.
+//
+// Together, offset and limit define a message range.
+// The offset parameter specifies the offset from first
+// action in the log.
+// The limit parameter specifies the maximum number of
+// actions to fetch.
+func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
+	limit int) ([]Action, error) {
+	url := BaseURL + "/ajax/mercury/thread_info.php?dpr=1"
+	values, err := s.commonParams()
+	if err != nil {
+		return nil, err
+	}
+	chatID := "thread_fbids][" + fbid
+	values.Add("messages["+chatID+"][offset]", strconv.Itoa(offset))
+	values.Add("messages["+chatID+"][limit]", strconv.Itoa(limit))
+	timestampKey := "messages[" + chatID + "][timestamp]"
+	if timestamp.IsZero() {
+		values.Add(timestampKey, "")
+	} else {
+		values.Add(timestampKey, strconv.FormatInt(timestamp.UnixNano()/1000000, 10))
+	}
+	response, err := s.jsonForPost(url, values)
+	if err != nil {
+		return nil, err
+	}
+	var messageData struct {
+		Payload struct {
+			Actions []map[string]interface{} `json:"actions"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(response, &messageData); err != nil {
+		return nil, err
+	}
+	var decoded []Action
+	for _, x := range messageData.Payload.Actions {
+		decoded = append(decoded, decodeAction(x))
+	}
+	return decoded, nil
 }

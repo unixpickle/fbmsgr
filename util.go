@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -100,4 +101,14 @@ func putJSONIntoObject(source, dest interface{}) error {
 		return err
 	}
 	return json.Unmarshal(encoded, &dest)
+}
+
+// stripFBIDPrefix turns strings like "fbid:12" into "12".
+// If the string does not start with "fbid:", no change is
+// performed.
+func stripFBIDPrefix(s string) string {
+	if strings.HasPrefix(s, "fbid:") {
+		return s[5:]
+	}
+	return s
 }

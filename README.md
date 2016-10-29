@@ -18,3 +18,4 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
  * Receive events for friend "Last Active" updates
  * Set chat text colors (to arbitrary RGB colors)
  * List a user's threads.
+ * List messages in a thread.

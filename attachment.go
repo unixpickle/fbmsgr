@@ -24,6 +24,10 @@ type Attachment interface {
 // decodeAttachment decodes any attachment, attempting to
 // use one of the built-in Attachment structs if possible.
 func decodeAttachment(raw map[string]interface{}) Attachment {
+	if _, ok := raw["mercury"]; !ok {
+		raw = map[string]interface{}{"mercury": raw}
+	}
+
 	image, err := decodeImageAttachment(raw)
 	if err == nil {
 		return image
@@ -74,6 +78,8 @@ func (u *UnknownAttachment) String() string {
 // An ImageAttachment is an Attachment with specific info
 // about an image.
 type ImageAttachment struct {
+	// These three fields will only be set for images
+	// received from an event.
 	FBID     string
 	Filename string
 	MimeType string
