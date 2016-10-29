@@ -25,6 +25,9 @@ type Action interface {
 
 	// AuthorFBID returns the FBID of the action's sender.
 	AuthorFBID() string
+
+	// RawFields returns the raw JSON object for the action.
+	RawFields() map[string]interface{}
 }
 
 // decodeAction creates the most appropriate Action type
@@ -85,6 +88,11 @@ func (g *GenericAction) MessageID() string {
 func (g *GenericAction) AuthorFBID() string {
 	fbid, _ := g.RawData["author"].(string)
 	return stripFBIDPrefix(fbid)
+}
+
+// RawFields returns the raw data.
+func (g *GenericAction) RawFields() map[string]interface{} {
+	return g.RawData
 }
 
 // String returns a generic string representation of the
