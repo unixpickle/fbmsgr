@@ -117,8 +117,8 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 			AttachType string `json:"attach_type"`
 
 			Meta struct {
-				FBID string `json:"fbid"`
-				Dims string `json:"dimensions"`
+				FBID interface{} `json:"fbid"`
+				Dims string      `json:"dimensions"`
 			} `json:"metadata"`
 
 			PreviewURL    string `json:"preview_url"`
@@ -148,7 +148,7 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 	width, _ := strconv.Atoi(matches[1])
 	height, _ := strconv.Atoi(matches[2])
 	return &ImageAttachment{
-		FBID:               usableObject.Mercury.Meta.FBID,
+		FBID:               canonicalFBID(usableObject.Mercury.Meta.FBID),
 		Width:              width,
 		Height:             height,
 		Animated:           usableObject.Mercury.AttachType == AnimatedImageAttachmentType,

@@ -233,13 +233,13 @@ func (s *Session) dispatchTyping(ch chan<- Event, m map[string]interface{}) {
 	}
 	if obj.Type == "ttyp" {
 		ch <- TypingEvent{
-			SenderFBID:  strconv.FormatInt(int64(obj.From), 10),
+			SenderFBID:  floatIDToString(obj.From),
 			Typing:      obj.State == 1,
-			GroupThread: strconv.FormatInt(int64(obj.ThreadFBID), 10),
+			GroupThread: floatIDToString(obj.ThreadFBID),
 		}
 	} else {
 		ch <- TypingEvent{
-			SenderFBID: strconv.FormatInt(int64(obj.From), 10),
+			SenderFBID: floatIDToString(obj.From),
 			Typing:     obj.State == 1,
 		}
 	}

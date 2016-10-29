@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -111,4 +112,26 @@ func stripFBIDPrefix(s string) string {
 		return s[5:]
 	}
 	return s
+}
+
+// floatIDToString converts a floating point to an integer
+// string.
+// If id is 0, it returns "" for convenience.
+func floatIDToString(id float64) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatInt(int64(id), 10)
+}
+
+// canonicalFBID converts a float64 or a string into a
+// textual FBID with no prefix.
+func canonicalFBID(val interface{}) string {
+	switch val := val.(type) {
+	case string:
+		return stripFBIDPrefix(val)
+	case float64:
+		return floatIDToString(val)
+	}
+	return ""
 }
