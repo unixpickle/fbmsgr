@@ -18,10 +18,10 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
  * Set chat text colors (to arbitrary RGB colors)
  * List a user's threads.
  * List messages in a thread.
+ * Send and receive typing events
 
 # TODO
 
- * Typing events (sending and receiving)
  * Emoji/sticker transmission
  * Sending attachments
    * Images

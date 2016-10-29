@@ -49,6 +49,19 @@ type BuddyEvent struct {
 	LastActive time.Time
 }
 
+// A TypingEvent indicates that a user has started or
+// stopped typing.
+type TypingEvent struct {
+	// SenderFBID is the user who is typing.
+	SenderFBID string
+
+	// Typing indicates whether or not the user is typing.
+	Typing bool
+
+	// If non-empty, this specifies the group chat ID.
+	GroupThread string
+}
+
 // Events returns a channel of events.
 // This will start listening for events if no listener was
 // already running.
@@ -133,6 +146,8 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 			s.dispatchDelta(ch, m)
 		case "buddylist_overlay":
 			s.dispatchBuddylistOverlay(ch, m)
+		case "ttyp", "typ":
+			s.dispatchTyping(ch, m)
 		}
 	}
 }
@@ -190,6 +205,30 @@ func (s *Session) dispatchBuddylistOverlay(ch chan<- Event, obj map[string]inter
 		ch <- BuddyEvent{
 			FBID:       user,
 			LastActive: time.Unix(int64(info.LastActive), 0),
+		}
+	}
+}
+
+func (s *Session) dispatchTyping(ch chan<- Event, m map[string]interface{}) {
+	var obj struct {
+		State      int     `json:"st"`
+		From       float64 `json:"from"`
+		ThreadFBID float64 `json:"thread_fbid"`
+		Type       string  `json:"type"`
+	}
+	if putJSONIntoObject(m, &obj) != nil {
+		return
+	}
+	if obj.Type == "ttyp" {
+		ch <- TypingEvent{
+			SenderFBID:  strconv.FormatInt(int64(obj.From), 10),
+			Typing:      obj.State == 1,
+			GroupThread: strconv.FormatInt(int64(obj.ThreadFBID), 10),
+		}
+	} else {
+		ch <- TypingEvent{
+			SenderFBID: strconv.FormatInt(int64(obj.From), 10),
+			Typing:     obj.State == 1,
 		}
 	}
 }
