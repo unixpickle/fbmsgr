@@ -1,10 +1,11 @@
-# fbmsgr
+# fbmsgr [![GoDoc](https://godoc.org/github.com/unixpickle/fbmsgr?status.svg)](https://godoc.org/github.com/unixpickle/fbmsgr)
 
-This will be a wrapper around [Facebook Messenger's](https://messenger.com) internal AJAX protocol. I hope it will make it possible to implement all sorts of Facebook bots. Below is a list of potential applications:
+This is a wrapper around [Facebook Messenger's](https://messenger.com) internal AJAX protocol. This wrapper could be used for any number of cool things, such as:
 
  * Tracking your friends' Messenger activity.
  * Analyzing your conversations (e.g. keywords analysis)
- * Automating certain kinds of messages (e.g. "Away" statuses)
+ * Automating "Away" messages
+ * Creating chat bots
 
 # Current status
 
@@ -27,3 +28,4 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
  * Emoji/sticker transmission
  * Modifying chat preferences (emoji, nicknames, etc.)
  * View pending message requests
+ * Create new group chats
