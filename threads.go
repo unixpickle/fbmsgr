@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const actionBufferSize = 500
+
 // ThreadInfo stores information about a chat thread.
 // A chat thread is facebook's internal name for a
 // conversation (either a group chat or a 1-on-1).
@@ -143,6 +145,68 @@ func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
 		decoded = append(decoded, decodeAction(x))
 	}
 	return decoded, nil
+}
+
+// FullActionLog fetches all of the actions in a thread
+// and returns them in reverse chronological order over
+// a channel.
+//
+// The cancel channel, if non-nil, can be closed to stop
+// the fetch early.
+//
+// The returned channels will both be closed once the
+// fetch has completed or been cancelled.
+// If an error is encountered during the fetch, it is sent
+// over the (buffered) error channel and the fetch will be
+// aborted.
+func (s *Session) FullActionLog(fbid string, cancel <-chan struct{}) (<-chan Action, <-chan error) {
+	if cancel == nil {
+		cancel = make(chan struct{})
+	}
+
+	res := make(chan Action, actionBufferSize)
+	errRes := make(chan error, 1)
+	go func() {
+		defer close(res)
+		defer close(errRes)
+		var lastTime time.Time
+		var offset int
+		for {
+			listing, err := s.ActionLog(fbid, lastTime, offset, actionBufferSize)
+			if err != nil {
+				errRes <- err
+				return
+			}
+
+			// Remove the one overlapping action.
+			if offset > 0 && len(listing) > 0 {
+				listing = listing[:len(listing)-1]
+			}
+			if len(listing) == 0 {
+				return
+			}
+
+			for i := len(listing) - 1; i >= 0; i-- {
+				x := listing[i]
+				select {
+				case <-cancel:
+					return
+				default:
+				}
+
+				select {
+				case res <- x:
+				case <-cancel:
+					return
+				}
+			}
+
+			offset += len(listing)
+			lastTime = listing[0].ActionTime()
+		}
+	}()
+
+	return res, errRes
 }
 
 // DeleteMessage deletes a message given its ID.
