@@ -47,6 +47,35 @@ func (s *Session) SendReadReceipt(fbid string) error {
 	return err
 }
 
+// SendTyping sends a typing notification to a user.
+// For group chats, use SendGroupTyping.
+func (s *Session) SendTyping(userFBID string, typing bool) error {
+	return s.sendTyping(userFBID, userFBID, typing)
+}
+
+// SendGroupTyping sends a typing notification to a group.
+func (s *Session) SendGroupTyping(groupFBID string, typing bool) error {
+	return s.sendTyping(groupFBID, "", typing)
+}
+
+func (s *Session) sendTyping(thread, to string, typ bool) error {
+	url := BaseURL + "/ajax/messaging/typ.php?dpr=1"
+	values, err := s.commonParams()
+	if err != nil {
+		return err
+	}
+	values.Set("source", "source:messenger:web")
+	values.Set("thread", thread)
+	values.Set("to", to)
+	if typ {
+		values.Set("typ", "1")
+	} else {
+		values.Set("type", "0")
+	}
+	_, err = s.jsonForPost(url, values)
+	return err
+}
+
 func (s *Session) textMessageParams(body string) (url.Values, error) {
 	reqParams, err := s.commonParams()
 	if err != nil {
