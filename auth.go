@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
@@ -34,6 +36,9 @@ type Session struct {
 	pollLock sync.Mutex
 	pollChan <-chan Event
 	pollErr  error
+
+	randLock sync.Mutex
+	randGen  *rand.Rand
 }
 
 // Auth creates a new Session by authenticating with the
@@ -107,7 +112,11 @@ func sessionForHomepage(c *http.Client, body io.Reader) (*Session, error) {
 	if err != nil {
 		return nil, errors.New("find USER_ID: " + err.Error())
 	}
-	return &Session{client: c, userID: userID}, nil
+	return &Session{
+		client:  c,
+		userID:  userID,
+		randGen: rand.New(rand.NewSource(time.Now().UnixNano())),
+	}, nil
 }
 
 func requestLoginCookies(c *http.Client, body *html.Node) error {

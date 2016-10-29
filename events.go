@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"math/rand"
 	"net/url"
 	"strconv"
 	"time"
@@ -263,10 +262,14 @@ func (s *Session) dispatchDelete(ch chan<- Event, m map[string]interface{}) {
 func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string, err error) {
 	values := url.Values{}
 	values.Set("cap", "8")
+
 	cbStr := ""
+	s.randLock.Lock()
 	for i := 0; i < 4; i++ {
-		cbStr += string(byte(rand.Intn(26)) + 'a')
+		cbStr += string(byte(s.randGen.Intn(26)) + 'a')
 	}
+	s.randLock.Unlock()
+
 	values.Set("cb", cbStr)
 	values.Set("channel", "p_"+s.userID)
 	values.Set("clientid", "3342de8f")

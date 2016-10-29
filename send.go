@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math/rand"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -238,7 +237,7 @@ func (s *Session) textMessageParams(body string) (url.Values, error) {
 	reqParams.Add("body", body)
 	reqParams.Add("ephemeral_ttl_mode", "0")
 	reqParams.Add("has_attachment", "false")
-	msgID := randomMessageID()
+	msgID := s.randomMessageID()
 	reqParams.Add("message_id", msgID)
 	reqParams.Add("offline_threading_id", msgID)
 	reqParams.Add("source", "source:messenger:web")
@@ -292,10 +291,13 @@ func (s *Session) sendMessage(values url.Values) (mid string, err error) {
 	return "", errors.New("no message ID in response")
 }
 
-func randomMessageID() string {
+func (s *Session) randomMessageID() string {
 	res := "6"
+
+	s.randLock.Lock()
 	for i := 1; i < 18; i++ {
-		res += strconv.Itoa(rand.Intn(10))
+		res += strconv.Itoa(s.randGen.Intn(10))
 	}
+	s.randLock.Unlock()
 	return res
 }
