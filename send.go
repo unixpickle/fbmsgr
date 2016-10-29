@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+type EmojiSize string
+
+const (
+	SmallEmoji  EmojiSize = "small"
+	MediumEmoji           = "medium"
+	LargeEmoji            = "large"
+)
+
 // SendText attempts to send a textual message to the user
 // with the given fbid.
 func (s *Session) SendText(fbid, message string) (msgID string, err error) {
@@ -28,6 +36,35 @@ func (s *Session) SendGroupText(groupFBID, message string) (msgID string, err er
 		return "", err
 	}
 	reqParams.Add("thread_fbid", groupFBID)
+	return s.sendMessage(reqParams)
+}
+
+// SendLike is like SendText, but it sends an emoji at a
+// given size.
+// It is crutial that the emoji is valid and that the size
+// is also valid.
+// Otherwise, this can trigger a bug in the web client
+// that essentially bricks the conversation.
+func (s *Session) SendLike(fbid, emoji string, size EmojiSize) (msgID string, err error) {
+	reqParams, err := s.textMessageParams(emoji)
+	if err != nil {
+		return "", err
+	}
+	reqParams.Add("other_user_fbid", fbid)
+	reqParams.Add("tags[0]", "hot_emoji_size:"+string(size))
+	reqParams.Add("tags[1]", "hot_emoji_source:hot_like")
+	return s.sendMessage(reqParams)
+}
+
+// SendGroupLike is like SendLike, but for a group thread.
+func (s *Session) SendGroupLike(groupFBID, emoji string, size EmojiSize) (msgID string, err error) {
+	reqParams, err := s.textMessageParams(emoji)
+	if err != nil {
+		return "", err
+	}
+	reqParams.Add("thread_fbid", groupFBID)
+	reqParams.Add("tags[0]", "hot_emoji_size:"+string(size))
+	reqParams.Add("tags[1]", "hot_emoji_source:hot_like")
 	return s.sendMessage(reqParams)
 }
 
