@@ -10,8 +10,9 @@ This will be a wrapper around [Facebook Messenger's](https://messenger.com) inte
 
 Currently, the API is fairly reliable and can perform a bunch of basic functionalities. Here is a list of supported features (it may lag slightly behind the master branch):
 
- * Send textual messages to groups or people
- * Receive messages with attachments
+ * Send textual messages to people or groups
+ * Send attachments to people or groups
+ * Receive messages with or without attachments
  * Send read receipts
  * Receive events for incoming messages
  * Receive events for friend "Last Active" updates
@@ -24,9 +25,5 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 # TODO
 
  * Emoji/sticker transmission
- * Sending attachments
-   * Images
-   * Audio
-   * Video
-   * Raw files
  * Modifying chat preferences (emoji, nicknames, etc.)
+ * View pending message requests

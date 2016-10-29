@@ -3,8 +3,15 @@ package fbmsgr
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"math/rand"
+	"mime"
+	"mime/multipart"
+	"net/http"
+	"net/textproto"
 	"net/url"
+	"os"
+	"path"
 	"strconv"
 	"time"
 )
@@ -16,6 +23,16 @@ const (
 	MediumEmoji           = "medium"
 	LargeEmoji            = "large"
 )
+
+// UploadResult is the result of uploading a file.
+type UploadResult struct {
+	// One of the following strings will be non-nil after
+	// a successful upload.
+	VideoID string
+	FileID  string
+	AudioID string
+	ImageID string
+}
 
 // SendText attempts to send a textual message to the user
 // with the given fbid.
@@ -95,6 +112,104 @@ func (s *Session) SendGroupTyping(groupFBID string, typing bool) error {
 	return s.sendTyping(groupFBID, "", typing)
 }
 
+// SendAttachment sends an attachment to another user.
+// For group chats, use SendGroupAttachment.
+func (s *Session) SendAttachment(userFBID string, a *UploadResult) (mid string, err error) {
+	reqParams, err := s.attachmentMessageParams(a)
+	if err != nil {
+		return "", err
+	}
+	reqParams.Add("other_user_fbid", userFBID)
+	return s.sendMessage(reqParams)
+}
+
+// SendGroupAttachment is like SendAttachment for groups.
+func (s *Session) SendGroupAttachment(groupFBID string, a *UploadResult) (mid string, err error) {
+	reqParams, err := s.attachmentMessageParams(a)
+	if err != nil {
+		return "", err
+	}
+	reqParams.Add("thread_fbid", groupFBID)
+	return s.sendMessage(reqParams)
+}
+
+// Upload uploads a file to be sent as an attachment.
+func (s *Session) Upload(filename string, file io.Reader) (*UploadResult, error) {
+	values, err := s.commonParams()
+	if err != nil {
+		return nil, err
+	}
+	values.Set("dpr", "1")
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	mp := multipart.NewWriter(writer)
+
+	url := BaseURL + "/ajax/mercury/upload.php?" + values.Encode()
+	req, err := http.NewRequest("POST", url, reader)
+	req.Header.Set("Content-Type", mp.FormDataContentType())
+
+	errChan := make(chan error, 1)
+	go func() {
+		var err error
+		defer func() {
+			if err != nil {
+				errChan <- err
+			}
+			closeErr := mp.Close()
+			if err == nil && closeErr != nil {
+				errChan <- closeErr
+			}
+			close(errChan)
+			writer.Close()
+		}()
+		header := textproto.MIMEHeader{}
+		ext := path.Ext(filename)
+		header.Set("Content-Disposition", "form-data; name=\"upload_1000\"; filename=\"file"+
+			ext+"\"")
+		header.Set("Content-Type", mime.TypeByExtension(ext))
+		sender, err := mp.CreatePart(header)
+		if err != nil {
+			return
+		}
+		_, err = io.Copy(sender, file)
+	}()
+
+	body, err := jsonForResp(s.client.Do(req))
+	if err != nil {
+		return nil, err
+	}
+	if err := <-errChan; err != nil {
+		return nil, err
+	}
+
+	var msg struct {
+		Payload struct {
+			Meta []struct {
+				VideoID float64 `json:"video_id"`
+				FileID  float64 `json:"file_id"`
+				AudioID float64 `json:"audio_id"`
+				ImageID float64 `json:"image_id"`
+			} `json:"metadata"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return nil, err
+	}
+	if len(msg.Payload.Meta) != 1 {
+		return nil, errors.New("unexpected result")
+	}
+	return &UploadResult{
+		VideoID: floatIDToString(msg.Payload.Meta[0].VideoID),
+		AudioID: floatIDToString(msg.Payload.Meta[0].AudioID),
+		ImageID: floatIDToString(msg.Payload.Meta[0].ImageID),
+		FileID:  floatIDToString(msg.Payload.Meta[0].FileID),
+	}, nil
+}
+
 func (s *Session) sendTyping(thread, to string, typ bool) error {
 	url := BaseURL + "/ajax/messaging/typ.php?dpr=1"
 	values, err := s.commonParams()
@@ -133,6 +248,27 @@ func (s *Session) textMessageParams(body string) (url.Values, error) {
 	reqParams.Add("timestamp", ts)
 
 	return reqParams, nil
+}
+
+func (s *Session) attachmentMessageParams(a *UploadResult) (url.Values, error) {
+	values, err := s.textMessageParams("")
+	if err != nil {
+		return nil, err
+	}
+	values.Del("body")
+	values.Set("has_attachment", "true")
+	if a.FileID != "" {
+		values.Set("file_ids[0]", a.FileID)
+	} else if a.AudioID != "" {
+		values.Set("audio_ids[0]", a.AudioID)
+	} else if a.ImageID != "" {
+		values.Set("image_ids[0]", a.ImageID)
+	} else if a.VideoID != "" {
+		values.Set("video_ids[0]", a.VideoID)
+	} else {
+		return nil, errors.New("no attachment ID")
+	}
+	return values, nil
 }
 
 func (s *Session) sendMessage(values url.Values) (mid string, err error) {
