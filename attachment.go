@@ -11,6 +11,7 @@ const (
 	ImageAttachmentType   = "photo"
 	StickerAttachmentType = "sticker"
 	FileAttachmentType    = "file"
+	VideoAttachmentType   = "video"
 )
 
 // An Attachment is an abstract non-textual entity
@@ -44,6 +45,10 @@ func decodeAttachment(raw map[string]interface{}) Attachment {
 	file, err := decodeFileAttachment(raw)
 	if err == nil {
 		return file
+	}
+	video, err := decodeVideoAttachment(raw)
+	if err == nil {
+		return video
 	}
 
 	var typeObj struct {
@@ -290,4 +295,89 @@ func (f *FileAttachment) URL() string {
 // String returns a brief description of the attachment.
 func (f *FileAttachment) String() string {
 	return "FileAttachment<" + f.URL() + ">"
+}
+
+type VideoAttachment struct {
+	FBID     string
+	Name     string
+	VideoURL string
+
+	Width  int
+	Height int
+
+	PreviewURL    string
+	PreviewWidth  int
+	PreviewHeight int
+
+	LargePreviewURL    string
+	LargePreviewWidth  int
+	LargePreviewHeight int
+
+	ThumbnailURL string
+}
+
+func decodeVideoAttachment(raw map[string]interface{}) (*VideoAttachment, error) {
+	var obj struct {
+		Mercury struct {
+			Type string `json:"attach_type"`
+			Name string `json:"name"`
+			URL  string `json:"url"`
+
+			Meta struct {
+				FBID       string `json:"fbid"`
+				Dimensions struct {
+					Width  int `json:"width"`
+					Height int `json:"height"`
+				} `json:"dimensions"`
+			} `json:"metadata"`
+
+			PreviewURL    string `json:"preview_url"`
+			PreviewWidth  int    `json:"preview_width"`
+			PreviewHeight int    `json:"preview_height"`
+
+			LargePreviewURL    string `json:"large_preview_url"`
+			LargePreviewWidth  int    `json:"large_preview_width"`
+			LargePreviewHeight int    `json:"large_preview_height"`
+
+			ThumbnailURL string `json:"thumbnail_url"`
+		} `json:"mercury"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	if obj.Mercury.Type != VideoAttachmentType {
+		return nil, errors.New("unexpected type: " + obj.Mercury.Type)
+	}
+	return &VideoAttachment{
+		FBID:     obj.Mercury.Meta.FBID,
+		Name:     obj.Mercury.Name,
+		VideoURL: obj.Mercury.URL,
+
+		Width:  obj.Mercury.Meta.Dimensions.Width,
+		Height: obj.Mercury.Meta.Dimensions.Height,
+
+		PreviewURL:         obj.Mercury.PreviewURL,
+		PreviewWidth:       obj.Mercury.PreviewWidth,
+		PreviewHeight:      obj.Mercury.PreviewHeight,
+		LargePreviewURL:    obj.Mercury.LargePreviewURL,
+		LargePreviewWidth:  obj.Mercury.LargePreviewWidth,
+		LargePreviewHeight: obj.Mercury.LargePreviewHeight,
+		ThumbnailURL:       obj.Mercury.ThumbnailURL,
+	}, nil
+}
+
+// AttachmentType returns the internal attachment type for
+// video attachments.
+func (v *VideoAttachment) AttachmentType() string {
+	return VideoAttachmentType
+}
+
+// URL returns the main video URL.
+func (v *VideoAttachment) URL() string {
+	return v.VideoURL
+}
+
+// String returns a brief description of the attachment.
+func (v *VideoAttachment) String() string {
+	return "VideoAttachment<" + v.URL() + ">"
 }
