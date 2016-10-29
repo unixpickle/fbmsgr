@@ -82,6 +82,12 @@ func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
 	for _, x := range respObj.Payload.Participants {
 		x.FBID = stripFBIDPrefix(x.FBID)
 	}
+	for _, x := range respObj.Payload.Threads {
+		x.SnippetSender = stripFBIDPrefix(x.SnippetSender)
+		for i, y := range x.Participants {
+			x.Participants[i] = stripFBIDPrefix(y)
+		}
+	}
 
 	return &respObj.Payload, nil
 }
