@@ -1,6 +1,10 @@
 package fbmsgr
 
-import "errors"
+import (
+	"errors"
+	"regexp"
+	"strconv"
+)
 
 // These are attachment type IDs used by Messenger.
 const (
@@ -83,12 +87,7 @@ func (u *UnknownAttachment) String() string {
 // An ImageAttachment is an Attachment with specific info
 // about an image.
 type ImageAttachment struct {
-	// These three fields will only be set for images
-	// received from an event.
-	FBID     string
-	Filename string
-	MimeType string
-
+	FBID   string
 	Width  int
 	Height int
 
@@ -106,15 +105,13 @@ type ImageAttachment struct {
 
 func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error) {
 	var usableObject struct {
-		FBID     string `json:"fbid"`
-		Filename string `json:"filename"`
-		MimeType string `json:"mimeType"`
-		Meta     struct {
-			Width  int `json:"width"`
-			Height int `json:"height"`
-		} `json:"imageMetadata"`
 		Mercury struct {
 			AttachType string `json:"attach_type"`
+
+			Meta struct {
+				FBID string `json:"fbid"`
+				Dims string `json:"dimensions"`
+			} `json:"metadata"`
 
 			PreviewURL    string `json:"preview_url"`
 			PreviewWidth  int    `json:"preview_width"`
@@ -134,12 +131,17 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 	if usableObject.Mercury.AttachType != ImageAttachmentType {
 		return nil, errors.New("unexpected type: " + usableObject.Mercury.AttachType)
 	}
+	dimRegexp := regexp.MustCompile("^([0-9]*),([0-9]*)$")
+	matches := dimRegexp.FindStringSubmatch(usableObject.Mercury.Meta.Dims)
+	if matches == nil {
+		return nil, errors.New("invalid dimension: " + usableObject.Mercury.Meta.Dims)
+	}
+	width, _ := strconv.Atoi(matches[1])
+	height, _ := strconv.Atoi(matches[2])
 	return &ImageAttachment{
-		FBID:               usableObject.FBID,
-		Filename:           usableObject.Filename,
-		MimeType:           usableObject.MimeType,
-		Width:              usableObject.Meta.Width,
-		Height:             usableObject.Meta.Height,
+		FBID:               usableObject.Mercury.Meta.FBID,
+		Width:              width,
+		Height:             height,
 		PreviewURL:         usableObject.Mercury.PreviewURL,
 		PreviewWidth:       usableObject.Mercury.PreviewWidth,
 		PreviewHeight:      usableObject.Mercury.PreviewHeight,
