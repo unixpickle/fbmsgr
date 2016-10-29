@@ -38,7 +38,6 @@ func decodeAction(m map[string]interface{}) Action {
 		var attachments []Attachment
 		for _, x := range rawAttach {
 			if x, ok := x.(map[string]interface{}); ok {
-				fmt.Println("x is", x)
 				attachments = append(attachments, decodeAttachment(x))
 			}
 		}
