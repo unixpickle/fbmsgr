@@ -8,10 +8,11 @@ import (
 
 // These are attachment type IDs used by Messenger.
 const (
-	ImageAttachmentType   = "photo"
-	StickerAttachmentType = "sticker"
-	FileAttachmentType    = "file"
-	VideoAttachmentType   = "video"
+	ImageAttachmentType         = "photo"
+	AnimatedImageAttachmentType = "animated_image"
+	StickerAttachmentType       = "sticker"
+	FileAttachmentType          = "file"
+	VideoAttachmentType         = "video"
 )
 
 // An Attachment is an abstract non-textual entity
@@ -96,6 +97,8 @@ type ImageAttachment struct {
 	Width  int
 	Height int
 
+	Animated bool
+
 	PreviewURL    string
 	PreviewWidth  int
 	PreviewHeight int
@@ -133,7 +136,8 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 	if err := putJSONIntoObject(raw, &usableObject); err != nil {
 		return nil, err
 	}
-	if usableObject.Mercury.AttachType != ImageAttachmentType {
+	if usableObject.Mercury.AttachType != ImageAttachmentType &&
+		usableObject.Mercury.AttachType != AnimatedImageAttachmentType {
 		return nil, errors.New("unexpected type: " + usableObject.Mercury.AttachType)
 	}
 	dimRegexp := regexp.MustCompile("^([0-9]*),([0-9]*)$")
@@ -147,6 +151,7 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 		FBID:               usableObject.Mercury.Meta.FBID,
 		Width:              width,
 		Height:             height,
+		Animated:           usableObject.Mercury.AttachType == AnimatedImageAttachmentType,
 		PreviewURL:         usableObject.Mercury.PreviewURL,
 		PreviewWidth:       usableObject.Mercury.PreviewWidth,
 		PreviewHeight:      usableObject.Mercury.PreviewHeight,
@@ -161,6 +166,9 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 // AttachmentType returns the internal attachment type for
 // image attachments.
 func (i *ImageAttachment) AttachmentType() string {
+	if i.Animated {
+		return AnimatedImageAttachmentType
+	}
 	return ImageAttachmentType
 }
 
