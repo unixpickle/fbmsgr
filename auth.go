@@ -33,9 +33,10 @@ type Session struct {
 	fbDTSGLock sync.Mutex
 	fbDTSG     string
 
-	pollLock sync.Mutex
-	pollChan <-chan Event
-	pollErr  error
+	pollLock  sync.Mutex
+	pollChan  chan Event
+	pollErr   error
+	closeChan chan struct{}
 
 	randLock sync.Mutex
 	randGen  *rand.Rand

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/url"
 	"strconv"
 	"time"
@@ -68,43 +69,76 @@ type DeleteMessageEvent struct {
 	UpdatedThread *ThreadInfo
 }
 
-// Events returns a channel of events.
-// This will start listening for events if no listener was
-// already running.
-func (s *Session) Events() <-chan Event {
+// ReadEvent reads the next event from the server.
+//
+// The first call will start polling for events.
+//
+// If the session is closed or fails with an error, a nil
+// event is returned with an error (io.EOF if the read
+// only failed because the session was closed).
+func (s *Session) ReadEvent() (Event, error) {
 	s.pollLock.Lock()
-	defer s.pollLock.Unlock()
 	if s.pollChan == nil {
-		ch := make(chan Event, 1)
-		s.pollChan = ch
-		go s.poll(ch)
+		s.closeChan = make(chan struct{})
+		s.pollChan = make(chan Event, 1)
+		go s.poll()
 	}
-	return s.pollChan
-}
-
-// EventsError returns the error which caused the events
-// channel to be closed (if it is closed).
-func (s *Session) EventsError() error {
+	s.pollLock.Unlock()
+	select {
+	case <-s.closeChan:
+	case evt, ok := <-s.pollChan:
+		if ok {
+			return evt, nil
+		}
+	}
 	s.pollLock.Lock()
 	defer s.pollLock.Unlock()
-	return s.pollErr
+	return nil, s.pollErr
 }
 
-func (s *Session) poll(ch chan<- Event) {
+// Close tells the session to terminate and clean up its
+// resources.
+//
+// After closing a session, all ReadEvent calls will fail.
+func (s *Session) Close() error {
+	s.pollLock.Lock()
+	defer s.pollLock.Unlock()
+	if s.pollErr == nil {
+		s.pollErr = io.EOF
+	}
+	if s.pollChan == nil {
+		s.pollChan = make(chan Event)
+		s.closeChan = make(chan struct{})
+		close(s.pollChan)
+		close(s.closeChan)
+	} else {
+		select {
+		case <-s.closeChan:
+			return errors.New("already closed")
+		default:
+			close(s.closeChan)
+		}
+	}
+	return nil
+}
+
+func (s *Session) poll() {
+	defer close(s.pollChan)
+
 	host, err := s.callReconnect()
 	if err != nil {
-		s.pollFailed(errors.New("reconnect: "+err.Error()), ch)
+		s.pollFailed(errors.New("reconnect: " + err.Error()))
 		return
 	}
 	pool, token, err := s.fetchPollingInfo(host)
 	if err != nil {
-		s.pollFailed(err, ch)
+		s.pollFailed(err)
 		return
 	}
 
 	var seq int
 	startTime := time.Now().Unix()
-	for {
+	for !s.checkClosed() {
 		values := url.Values{}
 		values.Set("cap", "8")
 		values.Set("cb", "anuk")
@@ -125,6 +159,9 @@ func (s *Session) poll(ch chan<- Event) {
 		values.Set("sticky_token", token)
 		u := "https://0-edge-chat.messenger.com/pull?" + values.Encode()
 		response, err := s.jsonForGet(u)
+		if s.checkClosed() {
+			return
+		}
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 			continue
@@ -136,12 +173,12 @@ func (s *Session) poll(ch chan<- Event) {
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 		} else {
-			s.dispatchMessages(ch, msgs)
+			s.dispatchMessages(msgs)
 		}
 	}
 }
 
-func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{}) {
+func (s *Session) dispatchMessages(msgs []map[string]interface{}) {
 	for _, m := range msgs {
 		t, ok := m["type"].(string)
 		if !ok {
@@ -149,21 +186,21 @@ func (s *Session) dispatchMessages(ch chan<- Event, msgs []map[string]interface{
 		}
 		switch t {
 		case "delta":
-			s.dispatchDelta(ch, m)
+			s.dispatchDelta(m)
 		case "buddylist_overlay":
-			s.dispatchBuddylistOverlay(ch, m)
+			s.dispatchBuddylistOverlay(m)
 		case "ttyp", "typ":
-			s.dispatchTyping(ch, m)
+			s.dispatchTyping(m)
 		case "messaging":
 			evt, _ := m["event"].(string)
 			if evt == "delete_messages" {
-				s.dispatchDelete(ch, m)
+				s.dispatchDelete(m)
 			}
 		}
 	}
 }
 
-func (s *Session) dispatchDelta(ch chan<- Event, obj map[string]interface{}) {
+func (s *Session) dispatchDelta(obj map[string]interface{}) {
 	var deltaObj struct {
 		Delta struct {
 			Body        string                   `json:"body"`
@@ -190,18 +227,17 @@ func (s *Session) dispatchDelta(ch chan<- Event, obj map[string]interface{}) {
 	for _, a := range deltaObj.Delta.Attachments {
 		attachments = append(attachments, decodeAttachment(a))
 	}
-	evt := MessageEvent{
+	s.emitEvent(MessageEvent{
 		MessageID:   deltaObj.Delta.Meta.MessageID,
 		Body:        deltaObj.Delta.Body,
 		Attachments: attachments,
 		SenderFBID:  deltaObj.Delta.Meta.Actor,
 		GroupThread: deltaObj.Delta.Meta.ThreadKey.ThreadFBID,
 		OtherUser:   deltaObj.Delta.Meta.ThreadKey.OtherUser,
-	}
-	ch <- evt
+	})
 }
 
-func (s *Session) dispatchBuddylistOverlay(ch chan<- Event, obj map[string]interface{}) {
+func (s *Session) dispatchBuddylistOverlay(obj map[string]interface{}) {
 	var deltaObj struct {
 		Overlay map[string]struct {
 			LastActive float64 `json:"la"`
@@ -213,14 +249,14 @@ func (s *Session) dispatchBuddylistOverlay(ch chan<- Event, obj map[string]inter
 	}
 
 	for user, info := range deltaObj.Overlay {
-		ch <- BuddyEvent{
+		s.emitEvent(BuddyEvent{
 			FBID:       user,
 			LastActive: time.Unix(int64(info.LastActive), 0),
-		}
+		})
 	}
 }
 
-func (s *Session) dispatchTyping(ch chan<- Event, m map[string]interface{}) {
+func (s *Session) dispatchTyping(m map[string]interface{}) {
 	var obj struct {
 		State      int     `json:"st"`
 		From       float64 `json:"from"`
@@ -231,20 +267,20 @@ func (s *Session) dispatchTyping(ch chan<- Event, m map[string]interface{}) {
 		return
 	}
 	if obj.Type == "ttyp" {
-		ch <- TypingEvent{
+		s.emitEvent(TypingEvent{
 			SenderFBID:  floatIDToString(obj.From),
 			Typing:      obj.State == 1,
 			GroupThread: floatIDToString(obj.ThreadFBID),
-		}
+		})
 	} else {
-		ch <- TypingEvent{
+		s.emitEvent(TypingEvent{
 			SenderFBID: floatIDToString(obj.From),
 			Typing:     obj.State == 1,
-		}
+		})
 	}
 }
 
-func (s *Session) dispatchDelete(ch chan<- Event, m map[string]interface{}) {
+func (s *Session) dispatchDelete(m map[string]interface{}) {
 	var obj struct {
 		IDs    []string    `json:"mids"`
 		Thread *ThreadInfo `json:"updated_thread"`
@@ -253,10 +289,32 @@ func (s *Session) dispatchDelete(ch chan<- Event, m map[string]interface{}) {
 		return
 	}
 	obj.Thread.canonicalizeFBIDs()
-	ch <- DeleteMessageEvent{
+	s.emitEvent(DeleteMessageEvent{
 		MessageIDs:    obj.IDs,
 		UpdatedThread: obj.Thread,
+	})
+}
+
+func (s *Session) checkClosed() bool {
+	select {
+	case <-s.closeChan:
+		return true
+	default:
+		return false
 	}
+}
+
+func (s *Session) emitEvent(e Event) {
+	select {
+	case s.pollChan <- e:
+	case <-s.closeChan:
+	}
+}
+
+func (s *Session) pollFailed(e error) {
+	s.pollLock.Lock()
+	s.pollErr = e
+	s.pollLock.Unlock()
 }
 
 func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string, err error) {
@@ -325,13 +383,6 @@ func (s *Session) callReconnect() (host string, err error) {
 		return "", err
 	}
 	return respObj.Payload.Host, nil
-}
-
-func (s *Session) pollFailed(e error, ch chan<- Event) {
-	s.pollLock.Lock()
-	s.pollErr = e
-	close(ch)
-	s.pollLock.Unlock()
 }
 
 // parseMessages extracts all of the "msg" payloads from a

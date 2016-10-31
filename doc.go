@@ -12,6 +12,10 @@
 //         // Handle login failure.
 //     }
 //
+// Once you are done with a session you have allocated,
+// you should call Close() on it to clear any resources
+// (e.g. goroutines) that it is using.
+//
 // Sending messages
 //
 // When sending a message, you specify a receiver by their
@@ -50,10 +54,14 @@
 //
 // Events
 //
-// It is easy to receive events such as incoming messages.
-// All you must do is read from the events channel:
+// It is easy to receive events such as incoming messages
+// using the ReadEvent method:
 //
-//     for x := range sess.Events() {
+//     for {
+//         x, err := sess.ReadEvent()
+//         if err != nil {
+//             // Handle error.
+//         }
 //         if msg, ok := x.(fbmsgr.MessageEvent); ok {
 //             if msg.SenderFBID == sess.FBID() {
 //                 // It is a message that we sent.
