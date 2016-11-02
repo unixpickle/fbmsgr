@@ -31,6 +31,7 @@ type Session struct {
 	userID string
 
 	fbDTSGLock sync.Mutex
+	fbDTSGTime time.Time
 	fbDTSG     string
 
 	pollLock  sync.Mutex

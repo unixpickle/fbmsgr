@@ -8,9 +8,12 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 )
+
+const dtsgTimeout = time.Hour * 8
 
 // fetchDTSG fetches a usable value for the fb_dtsg field
 // present in many AJAX requests.
@@ -20,7 +23,11 @@ func (s *Session) fetchDTSG() (string, error) {
 	s.fbDTSGLock.Lock()
 	defer s.fbDTSGLock.Unlock()
 	if s.fbDTSG != "" {
-		return s.fbDTSG, nil
+		if time.Since(s.fbDTSGTime) > dtsgTimeout {
+			s.fbDTSG = ""
+		} else {
+			return s.fbDTSG, nil
+		}
 	}
 	homepage, err := s.client.Get(BaseURL)
 	if homepage != nil {
@@ -39,6 +46,7 @@ func (s *Session) fetchDTSG() (string, error) {
 		return "", errors.New("fetch dtsg: " + err.Error())
 	}
 	s.fbDTSG = keyVal
+	s.fbDTSGTime = time.Now()
 	return s.fbDTSG, nil
 }
 
