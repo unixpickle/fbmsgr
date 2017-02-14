@@ -29,3 +29,7 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
  * Modifying chat preferences (emoji, nicknames, etc.)
  * View pending message requests
  * Create new group chats
+
+# License
+
+This is under a BSD 2-clause license. See [LICENSE](LICENSE).
