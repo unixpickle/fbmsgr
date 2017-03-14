@@ -174,6 +174,9 @@ func (i *ImageAttachment) AttachmentType() string {
 
 // URL returns the high-resolution URL.
 func (i *ImageAttachment) URL() string {
+	if i.HiResURL == "" {
+		return i.LargePreviewURL
+	}
 	return i.HiResURL
 }
 
