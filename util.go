@@ -1,6 +1,7 @@
 package fbmsgr
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -82,6 +83,17 @@ func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
 // jsonForGet runs a get and returns the raw JSON.
 func (s *Session) jsonForGet(url string) ([]byte, error) {
 	return jsonForResp(s.client.Get(url))
+}
+
+// jsonForGetContext is like jsonForGet but with an added
+// request context.
+func (s *Session) jsonForGetContext(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	return jsonForResp(s.client.Do(req))
 }
 
 // jsonForResp returns the json for the response.

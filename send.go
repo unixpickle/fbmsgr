@@ -149,6 +149,9 @@ func (s *Session) Upload(filename string, file io.Reader) (*UploadResult, error)
 
 	url := BaseURL + "/ajax/mercury/upload.php?" + values.Encode()
 	req, err := http.NewRequest("POST", url, reader)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", mp.FormDataContentType())
 
 	errChan := make(chan error, 1)

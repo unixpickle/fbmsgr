@@ -2,6 +2,7 @@ package fbmsgr
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"math/rand"
@@ -34,10 +35,11 @@ type Session struct {
 	fbDTSGTime time.Time
 	fbDTSG     string
 
-	pollLock  sync.Mutex
-	pollChan  chan Event
-	pollErr   error
-	closeChan chan struct{}
+	pollLock   sync.Mutex
+	pollChan   chan Event
+	pollErr    error
+	pollCtx    context.Context
+	pollCancel context.CancelFunc
 
 	randLock sync.Mutex
 	randGen  *rand.Rand

@@ -2,6 +2,7 @@ package fbmsgr
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -79,13 +80,13 @@ type DeleteMessageEvent struct {
 func (s *Session) ReadEvent() (Event, error) {
 	s.pollLock.Lock()
 	if s.pollChan == nil {
-		s.closeChan = make(chan struct{})
+		s.pollCtx, s.pollCancel = context.WithCancel(context.Background())
 		s.pollChan = make(chan Event, 1)
 		go s.poll()
 	}
 	s.pollLock.Unlock()
 	select {
-	case <-s.closeChan:
+	case <-s.pollCtx.Done():
 	case evt, ok := <-s.pollChan:
 		if ok {
 			return evt, nil
@@ -108,15 +109,15 @@ func (s *Session) Close() error {
 	}
 	if s.pollChan == nil {
 		s.pollChan = make(chan Event)
-		s.closeChan = make(chan struct{})
 		close(s.pollChan)
-		close(s.closeChan)
+		s.pollCtx, s.pollCancel = context.WithCancel(context.Background())
+		s.pollCancel()
 	} else {
 		select {
-		case <-s.closeChan:
+		case <-s.pollCtx.Done():
 			return errors.New("already closed")
 		default:
-			close(s.closeChan)
+			s.pollCancel()
 		}
 	}
 	return nil
@@ -158,7 +159,7 @@ func (s *Session) poll() {
 		values.Set("sticky_pool", pool)
 		values.Set("sticky_token", token)
 		u := "https://0-edge-chat.messenger.com/pull?" + values.Encode()
-		response, err := s.jsonForGet(u)
+		response, err := s.jsonForGetContext(s.pollCtx, u)
 		if s.checkClosed() {
 			return
 		}
@@ -297,7 +298,7 @@ func (s *Session) dispatchDelete(m map[string]interface{}) {
 
 func (s *Session) checkClosed() bool {
 	select {
-	case <-s.closeChan:
+	case <-s.pollCtx.Done():
 		return true
 	default:
 		return false
@@ -307,7 +308,7 @@ func (s *Session) checkClosed() bool {
 func (s *Session) emitEvent(e Event) {
 	select {
 	case s.pollChan <- e:
-	case <-s.closeChan:
+	case <-s.pollCtx.Done():
 	}
 }
 
