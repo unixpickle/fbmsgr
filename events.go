@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -70,80 +71,90 @@ type DeleteMessageEvent struct {
 	UpdatedThread *ThreadInfo
 }
 
-// ReadEvent reads the next event from the server.
+// An EventStream is a live stream of events.
 //
-// The first call will start polling for events.
-//
-// If the session is closed or fails with an error, a nil
-// event is returned with an error (io.EOF if the read
-// only failed because the session was closed).
-func (s *Session) ReadEvent() (Event, error) {
-	s.pollLock.Lock()
-	if s.pollChan == nil {
-		s.pollCtx, s.pollCancel = context.WithCancel(context.Background())
-		s.pollChan = make(chan Event, 1)
-		go s.poll()
-	}
-	s.pollLock.Unlock()
-	select {
-	case <-s.pollCtx.Done():
-	case evt, ok := <-s.pollChan:
-		if ok {
-			return evt, nil
-		}
-	}
-	s.pollLock.Lock()
-	defer s.pollLock.Unlock()
-	return nil, s.pollErr
+// Create an event stream using Session.EventStream().
+// Destroy an event stream using EventStream.Close().
+type EventStream struct {
+	session *Session
+
+	evtChan chan Event
+	ctx     context.Context
+	cancel  context.CancelFunc
+
+	lock   sync.RWMutex
+	err    error
+	closed bool
 }
 
-// Close tells the session to terminate and clean up its
-// resources.
-//
-// After closing a session, all ReadEvent calls will fail.
-func (s *Session) Close() error {
-	s.pollLock.Lock()
-	defer s.pollLock.Unlock()
-	if s.pollErr == nil {
-		s.pollErr = io.EOF
+func newEventStream(s *Session, closed bool) *EventStream {
+	res := &EventStream{
+		session: s,
+		evtChan: make(chan Event, 1),
+		closed:  closed,
 	}
-	if s.pollChan == nil {
-		s.pollChan = make(chan Event)
-		close(s.pollChan)
-		s.pollCtx, s.pollCancel = context.WithCancel(context.Background())
-		s.pollCancel()
+	res.ctx, res.cancel = context.WithCancel(context.Background())
+	if closed {
+		res.cancel()
+		close(res.evtChan)
 	} else {
-		select {
-		case <-s.pollCtx.Done():
-			return errors.New("already closed")
-		default:
-			s.pollCancel()
-		}
+		go res.poll()
 	}
+	return res
+}
+
+// Chan returns a channel of events for the stream.
+//
+// The channel is closed if the stream is closed or if an
+// error is encountered.
+func (e *EventStream) Chan() <-chan Event {
+	return e.evtChan
+}
+
+// Error returns the first error encountered while reading
+// the stream.
+func (e *EventStream) Error() error {
+	e.lock.RLock()
+	defer e.lock.RUnlock()
+	return e.err
+}
+
+// Close closes the stream.
+//
+// This will cause the event channel to be closed.
+// However, the result from Error() will not be changed.
+func (e *EventStream) Close() error {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	if e.closed {
+		return nil
+	}
+	e.closed = true
+	e.cancel()
 	return nil
 }
 
-func (s *Session) poll() {
-	defer close(s.pollChan)
+func (e *EventStream) poll() {
+	defer close(e.evtChan)
 
-	host, err := s.callReconnect()
+	host, err := e.callReconnect()
 	if err != nil {
-		s.pollFailed(errors.New("reconnect: " + err.Error()))
+		e.pollFailed(errors.New("reconnect: " + err.Error()))
 		return
 	}
-	pool, token, err := s.fetchPollingInfo(host)
+	pool, token, err := e.fetchPollingInfo(host)
 	if err != nil {
-		s.pollFailed(err)
+		e.pollFailed(err)
 		return
 	}
 
 	var seq int
 	startTime := time.Now().Unix()
-	for !s.checkClosed() {
+	for !e.checkClosed() {
 		values := url.Values{}
 		values.Set("cap", "8")
 		values.Set("cb", "anuk")
-		values.Set("channel", "p_"+s.userID)
+		values.Set("channel", "p_"+e.session.userID)
 		values.Set("clientid", "3342de8f")
 		values.Set("idle", strconv.FormatInt(time.Now().Unix()-startTime, 10))
 		values.Set("isq", "243")
@@ -154,13 +165,13 @@ func (s *Session) poll() {
 		values.Set("qp", "y")
 		values.Set("seq", strconv.Itoa(seq))
 		values.Set("state", "offline")
-		values.Set("uid", s.userID)
-		values.Set("viewer_uid", s.userID)
+		values.Set("uid", e.session.userID)
+		values.Set("viewer_uid", e.session.userID)
 		values.Set("sticky_pool", pool)
 		values.Set("sticky_token", token)
 		u := "https://0-edge-chat.messenger.com/pull?" + values.Encode()
-		response, err := s.jsonForGetContext(s.pollCtx, u)
-		if s.checkClosed() {
+		response, err := e.session.jsonForGetContext(e.ctx, u)
+		if e.checkClosed() {
 			return
 		}
 		if err != nil {
@@ -174,12 +185,12 @@ func (s *Session) poll() {
 		if err != nil {
 			time.Sleep(pollErrTimeout)
 		} else {
-			s.dispatchMessages(msgs)
+			e.dispatchMessages(msgs)
 		}
 	}
 }
 
-func (s *Session) dispatchMessages(msgs []map[string]interface{}) {
+func (e *EventStream) dispatchMessages(msgs []map[string]interface{}) {
 	for _, m := range msgs {
 		t, ok := m["type"].(string)
 		if !ok {
@@ -187,21 +198,21 @@ func (s *Session) dispatchMessages(msgs []map[string]interface{}) {
 		}
 		switch t {
 		case "delta":
-			s.dispatchDelta(m)
+			e.dispatchDelta(m)
 		case "buddylist_overlay":
-			s.dispatchBuddylistOverlay(m)
+			e.dispatchBuddylistOverlay(m)
 		case "ttyp", "typ":
-			s.dispatchTyping(m)
+			e.dispatchTyping(m)
 		case "messaging":
 			evt, _ := m["event"].(string)
 			if evt == "delete_messages" {
-				s.dispatchDelete(m)
+				e.dispatchDelete(m)
 			}
 		}
 	}
 }
 
-func (s *Session) dispatchDelta(obj map[string]interface{}) {
+func (e *EventStream) dispatchDelta(obj map[string]interface{}) {
 	var deltaObj struct {
 		Delta struct {
 			Body        string                   `json:"body"`
@@ -228,7 +239,7 @@ func (s *Session) dispatchDelta(obj map[string]interface{}) {
 	for _, a := range deltaObj.Delta.Attachments {
 		attachments = append(attachments, decodeAttachment(a))
 	}
-	s.emitEvent(MessageEvent{
+	e.emitEvent(MessageEvent{
 		MessageID:   deltaObj.Delta.Meta.MessageID,
 		Body:        deltaObj.Delta.Body,
 		Attachments: attachments,
@@ -238,7 +249,7 @@ func (s *Session) dispatchDelta(obj map[string]interface{}) {
 	})
 }
 
-func (s *Session) dispatchBuddylistOverlay(obj map[string]interface{}) {
+func (e *EventStream) dispatchBuddylistOverlay(obj map[string]interface{}) {
 	var deltaObj struct {
 		Overlay map[string]struct {
 			LastActive float64 `json:"la"`
@@ -250,14 +261,14 @@ func (s *Session) dispatchBuddylistOverlay(obj map[string]interface{}) {
 	}
 
 	for user, info := range deltaObj.Overlay {
-		s.emitEvent(BuddyEvent{
+		e.emitEvent(BuddyEvent{
 			FBID:       user,
 			LastActive: time.Unix(int64(info.LastActive), 0),
 		})
 	}
 }
 
-func (s *Session) dispatchTyping(m map[string]interface{}) {
+func (e *EventStream) dispatchTyping(m map[string]interface{}) {
 	var obj struct {
 		State      int     `json:"st"`
 		From       float64 `json:"from"`
@@ -268,20 +279,20 @@ func (s *Session) dispatchTyping(m map[string]interface{}) {
 		return
 	}
 	if obj.Type == "ttyp" {
-		s.emitEvent(TypingEvent{
+		e.emitEvent(TypingEvent{
 			SenderFBID:  floatIDToString(obj.From),
 			Typing:      obj.State == 1,
 			GroupThread: floatIDToString(obj.ThreadFBID),
 		})
 	} else {
-		s.emitEvent(TypingEvent{
+		e.emitEvent(TypingEvent{
 			SenderFBID: floatIDToString(obj.From),
 			Typing:     obj.State == 1,
 		})
 	}
 }
 
-func (s *Session) dispatchDelete(m map[string]interface{}) {
+func (e *EventStream) dispatchDelete(m map[string]interface{}) {
 	var obj struct {
 		IDs    []string    `json:"mids"`
 		Thread *ThreadInfo `json:"updated_thread"`
@@ -290,47 +301,47 @@ func (s *Session) dispatchDelete(m map[string]interface{}) {
 		return
 	}
 	obj.Thread.canonicalizeFBIDs()
-	s.emitEvent(DeleteMessageEvent{
+	e.emitEvent(DeleteMessageEvent{
 		MessageIDs:    obj.IDs,
 		UpdatedThread: obj.Thread,
 	})
 }
 
-func (s *Session) checkClosed() bool {
+func (e *EventStream) checkClosed() bool {
 	select {
-	case <-s.pollCtx.Done():
+	case <-e.ctx.Done():
 		return true
 	default:
 		return false
 	}
 }
 
-func (s *Session) emitEvent(e Event) {
+func (e *EventStream) emitEvent(evt Event) {
 	select {
-	case s.pollChan <- e:
-	case <-s.pollCtx.Done():
+	case e.evtChan <- evt:
+	case <-e.ctx.Done():
 	}
 }
 
-func (s *Session) pollFailed(e error) {
-	s.pollLock.Lock()
-	s.pollErr = e
-	s.pollLock.Unlock()
+func (e *EventStream) pollFailed(err error) {
+	e.lock.Lock()
+	e.err = err
+	e.lock.Unlock()
 }
 
-func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string, err error) {
+func (e *EventStream) fetchPollingInfo(host string) (stickyPool, stickyToken string, err error) {
 	values := url.Values{}
 	values.Set("cap", "8")
 
 	cbStr := ""
-	s.randLock.Lock()
+	e.session.randLock.Lock()
 	for i := 0; i < 4; i++ {
-		cbStr += string(byte(s.randGen.Intn(26)) + 'a')
+		cbStr += string(byte(e.session.randGen.Intn(26)) + 'a')
 	}
-	s.randLock.Unlock()
+	e.session.randLock.Unlock()
 
 	values.Set("cb", cbStr)
-	values.Set("channel", "p_"+s.userID)
+	values.Set("channel", "p_"+e.session.userID)
 	values.Set("clientid", "3342de8f")
 	values.Set("idle", "0")
 	values.Set("msgr_region", "FRC")
@@ -340,10 +351,10 @@ func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string,
 	values.Set("qp", "y")
 	values.Set("seq", "0")
 	values.Set("state", "offline")
-	values.Set("uid", s.userID)
-	values.Set("viewer_uid", s.userID)
+	values.Set("uid", e.session.userID)
+	values.Set("viewer_uid", e.session.userID)
 	u := "https://0-" + host + ".messenger.com/pull?" + values.Encode()
-	response, err := s.jsonForGet(u)
+	response, err := e.session.jsonForGet(u)
 	if err != nil {
 		return "", "", err
 	}
@@ -363,14 +374,14 @@ func (s *Session) fetchPollingInfo(host string) (stickyPool, stickyToken string,
 	return "", "", errors.New("unexpected initial polling response")
 }
 
-func (s *Session) callReconnect() (host string, err error) {
-	values, err := s.commonParams()
+func (e *EventStream) callReconnect() (host string, err error) {
+	values, err := e.session.commonParams()
 	if err != nil {
 		return "", err
 	}
 	values.Set("reason", "6")
 	u := "https://www.messenger.com/ajax/presence/reconnect.php?" + values.Encode()
-	response, err := s.jsonForGet(u)
+	response, err := e.session.jsonForGet(u)
 	if err != nil {
 		return "", err
 	}
@@ -384,6 +395,59 @@ func (s *Session) callReconnect() (host string, err error) {
 		return "", err
 	}
 	return respObj.Payload.Host, nil
+}
+
+// EventStream creates a new EventStream for the session.
+//
+// You must close the result when you are done with it.
+func (s *Session) EventStream() *EventStream {
+	return newEventStream(s, false)
+}
+
+// ReadEvent reads the next event from a default event
+// stream.
+// The first call will create the default event stream.
+//
+// ReadEvent is present for backward-compatibility.
+// You should consider using the EventStream API rather
+// than ReadEvent.
+//
+// If the stream is closed or fails with an error, a nil
+// event is returned with an error (io.EOF if the read
+// only failed because the stream was closed).
+func (s *Session) ReadEvent() (Event, error) {
+	s.defaultStreamLock.Lock()
+	if s.defaultStream == nil {
+		s.defaultStream = s.EventStream()
+	}
+	stream := s.defaultStream
+	s.defaultStreamLock.Unlock()
+
+	if evt, ok := <-stream.Chan(); ok {
+		return evt, nil
+	}
+	err := stream.Error()
+	if err == nil {
+		err = io.EOF
+	}
+	return nil, err
+}
+
+// Close cleans up the session's resources.
+// Any running EventStreams created from this session
+// should be closed separately.
+//
+// This closes the default event stream, meaning that all
+// ReadEvent calls will fail after Close() is finished.
+func (s *Session) Close() error {
+	s.defaultStreamLock.Lock()
+	if s.defaultStream != nil {
+		s.defaultStream.Close()
+	} else {
+		s.defaultStream = newEventStream(s, true)
+	}
+	s.defaultStreamLock.Unlock()
+	return nil
 }
 
 // parseMessages extracts all of the "msg" payloads from a

@@ -82,6 +82,26 @@
 //         }
 //     }
 //
+// With the EventStream API, you can get more fine-grained
+// control over how you receive events.
+// For example, you can read the next minute's worth of
+// events like so:
+//
+//     stream := sess.EventStream()
+//     defer stream.Close()
+//     timeout := time.After(time.Minute)
+//     for {
+//         select {
+//         case evt := <-stream.Chan():
+//             // Process event here.
+//         case <-timeout:
+//             return
+//         }
+//     }
+//
+// You can also create multiple EventStreams and read from
+// different streams in different places.
+//
 // Listing threads
 //
 // To list the threads (conversations) a user is in, you
