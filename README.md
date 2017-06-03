@@ -29,6 +29,7 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
  * Modifying chat preferences (emoji, nicknames, etc.)
  * View pending message requests
  * Create new group chats
+ * Better contexts in error messages
 
 # License
 
