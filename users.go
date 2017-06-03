@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+
+	"github.com/unixpickle/essentials"
 )
 
 // ProfilePicture gets a URL to a user's profile picture.
-func (s *Session) ProfilePicture(fbid string) (*url.URL, error) {
+func (s *Session) ProfilePicture(fbid string) (picURL *url.URL, err error) {
+	defer essentials.AddCtxTo("fbmsgr: get profile picture", &err)
+
 	params, err := s.commonParams()
 	if err != nil {
 		return nil, err

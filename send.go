@@ -13,6 +13,8 @@ import (
 	"path"
 	"strconv"
 	"time"
+
+	"github.com/unixpickle/essentials"
 )
 
 type EmojiSize string
@@ -36,6 +38,8 @@ type UploadResult struct {
 // SendText attempts to send a textual message to the user
 // with the given fbid.
 func (s *Session) SendText(fbid, message string) (msgID string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send text", &err)
+
 	reqParams, err := s.textMessageParams(message)
 	if err != nil {
 		return "", err
@@ -47,6 +51,8 @@ func (s *Session) SendText(fbid, message string) (msgID string, err error) {
 // SendGroupText is like SendText, but the message is sent
 // to a group chat rather than to an individual.
 func (s *Session) SendGroupText(groupFBID, message string) (msgID string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send group text", &err)
+
 	reqParams, err := s.textMessageParams(message)
 	if err != nil {
 		return "", err
@@ -62,6 +68,8 @@ func (s *Session) SendGroupText(groupFBID, message string) (msgID string, err er
 // Otherwise, this can trigger a bug in the web client
 // that essentially bricks the conversation.
 func (s *Session) SendLike(fbid, emoji string, size EmojiSize) (msgID string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send like", &err)
+
 	reqParams, err := s.textMessageParams(emoji)
 	if err != nil {
 		return "", err
@@ -74,6 +82,8 @@ func (s *Session) SendLike(fbid, emoji string, size EmojiSize) (msgID string, er
 
 // SendGroupLike is like SendLike, but for a group thread.
 func (s *Session) SendGroupLike(groupFBID, emoji string, size EmojiSize) (msgID string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send group like", &err)
+
 	reqParams, err := s.textMessageParams(emoji)
 	if err != nil {
 		return "", err
@@ -86,7 +96,9 @@ func (s *Session) SendGroupLike(groupFBID, emoji string, size EmojiSize) (msgID 
 
 // SendReadReceipt sends a read receipt to a group chat or
 // a chat with an individual user.
-func (s *Session) SendReadReceipt(fbid string) error {
+func (s *Session) SendReadReceipt(fbid string) (err error) {
+	defer essentials.AddCtxTo("fbmsgr: send read receipt", &err)
+
 	url := BaseURL + "/ajax/mercury/change_read_status.php?dpr=1"
 	values, err := s.commonParams()
 	if err != nil {
@@ -102,18 +114,21 @@ func (s *Session) SendReadReceipt(fbid string) error {
 
 // SendTyping sends a typing notification to a user.
 // For group chats, use SendGroupTyping.
-func (s *Session) SendTyping(userFBID string, typing bool) error {
+func (s *Session) SendTyping(userFBID string, typing bool) (err error) {
+	defer essentials.AddCtxTo("fbmsgr: send typing", &err)
 	return s.sendTyping(userFBID, userFBID, typing)
 }
 
 // SendGroupTyping sends a typing notification to a group.
-func (s *Session) SendGroupTyping(groupFBID string, typing bool) error {
+func (s *Session) SendGroupTyping(groupFBID string, typing bool) (err error) {
+	defer essentials.AddCtxTo("fbmsgr: send group typing", &err)
 	return s.sendTyping(groupFBID, "", typing)
 }
 
 // SendAttachment sends an attachment to another user.
 // For group chats, use SendGroupAttachment.
 func (s *Session) SendAttachment(userFBID string, a *UploadResult) (mid string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send attachment", &err)
 	reqParams, err := s.attachmentMessageParams(a)
 	if err != nil {
 		return "", err
@@ -124,6 +139,7 @@ func (s *Session) SendAttachment(userFBID string, a *UploadResult) (mid string, 
 
 // SendGroupAttachment is like SendAttachment for groups.
 func (s *Session) SendGroupAttachment(groupFBID string, a *UploadResult) (mid string, err error) {
+	defer essentials.AddCtxTo("fbmsgr: send group attachment", &err)
 	reqParams, err := s.attachmentMessageParams(a)
 	if err != nil {
 		return "", err
@@ -133,7 +149,8 @@ func (s *Session) SendGroupAttachment(groupFBID string, a *UploadResult) (mid st
 }
 
 // Upload uploads a file to be sent as an attachment.
-func (s *Session) Upload(filename string, file io.Reader) (*UploadResult, error) {
+func (s *Session) Upload(filename string, file io.Reader) (res *UploadResult, err error) {
+	defer essentials.AddCtxTo("fbmsgr: upload", &err)
 	values, err := s.commonParams()
 	if err != nil {
 		return nil, err

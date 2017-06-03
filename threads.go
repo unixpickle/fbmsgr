@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strconv"
 	"time"
+
+	"github.com/unixpickle/essentials"
 )
 
 const actionBufferSize = 500
@@ -68,7 +70,8 @@ type ThreadListResult struct {
 // The offset specifiecs the index of the first thread
 // to fetch, starting at 0.
 // The limit specifies the maximum number of threads.
-func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
+func (s *Session) Threads(offset, limit int) (res *ThreadListResult, err error) {
+	defer essentials.AddCtxTo("fbmsgr: threads", &err)
 	params, err := s.commonParams()
 	if err != nil {
 		return nil, err
@@ -113,7 +116,9 @@ func (s *Session) Threads(offset, limit int) (*ThreadListResult, error) {
 // The limit parameter specifies the maximum number of
 // actions to fetch.
 func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
-	limit int) ([]Action, error) {
+	limit int) (log []Action, err error) {
+	defer essentials.AddCtxTo("fbmsgr: action log", &err)
+
 	url := BaseURL + "/ajax/mercury/thread_info.php?dpr=1"
 	values, err := s.commonParams()
 	if err != nil {
@@ -140,11 +145,10 @@ func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
 	if err := json.Unmarshal(response, &messageData); err != nil {
 		return nil, err
 	}
-	var decoded []Action
 	for _, x := range messageData.Payload.Actions {
-		decoded = append(decoded, decodeAction(x))
+		log = append(log, decodeAction(x))
 	}
-	return decoded, nil
+	return
 }
 
 // FullActionLog fetches all of the actions in a thread
@@ -210,7 +214,9 @@ func (s *Session) FullActionLog(fbid string, cancel <-chan struct{}) (<-chan Act
 }
 
 // DeleteMessage deletes a message given its ID.
-func (s *Session) DeleteMessage(id string) error {
+func (s *Session) DeleteMessage(id string) (err error) {
+	defer essentials.AddCtxTo("fbmsgr: delete message", &err)
+
 	url := BaseURL + "/ajax/mercury/delete_messages.php?dpr=1"
 	values, err := s.commonParams()
 	if err != nil {

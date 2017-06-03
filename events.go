@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/unixpickle/essentials"
 )
 
 const pollErrTimeout = time.Second * 5
@@ -426,7 +428,7 @@ func (s *Session) ReadEvent() (Event, error) {
 	if evt, ok := <-stream.Chan(); ok {
 		return evt, nil
 	}
-	err := stream.Error()
+	err := essentials.AddCtx("fbmsgr: read event", stream.Error())
 	if err == nil {
 		err = io.EOF
 	}

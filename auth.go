@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/unixpickle/essentials"
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -43,7 +44,9 @@ type Session struct {
 
 // Auth creates a new Session by authenticating with the
 // Facebook backend.
-func Auth(user, password string) (*Session, error) {
+func Auth(user, password string) (sess *Session, err error) {
+	defer essentials.AddCtxTo("fbmsgr: authenticate", &err)
+
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
 		Jar: jar,
