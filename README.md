@@ -25,6 +25,7 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 
 # TODO
 
+ * Fix chatsaver repeated messages
  * Emoji/sticker transmission
  * Modifying chat preferences (emoji, nicknames, etc.)
  * View pending message requests
