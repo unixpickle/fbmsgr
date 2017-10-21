@@ -74,6 +74,48 @@ func (s *Session) commonParams() (url.Values, error) {
 	return reqParams, nil
 }
 
+// graphQLDoc runs a GraphQL query with a "doc_id".
+//
+// If the query is successful, the resulting data is
+// unmarshalled into dataOut.
+func (s *Session) graphQLDoc(docID string, params map[string]interface{},
+	dataOut interface{}) error {
+	reqParams, err := s.commonParams()
+	if err != nil {
+		return err
+	}
+	reqObj := map[string]interface{}{"doc_id": docID, "query_params": params}
+	reqJSON, err := json.Marshal(map[string]interface{}{"o0": reqObj})
+	if err != nil {
+		return err
+	}
+	reqParams.Add("queries", string(reqJSON))
+
+	resp, err := s.client.PostForm(BaseURL+"/api/graphqlbatch", reqParams)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
+
+	var respObj struct {
+		Object struct {
+			Data   interface{} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		} `json:"o0"`
+	}
+	respObj.Object.Data = dataOut
+	if err := decoder.Decode(&respObj); err != nil {
+		return err
+	}
+	if len(respObj.Object.Errors) > 0 {
+		return errors.New("GraphQL error: " + respObj.Object.Errors[0].Message)
+	}
+	return nil
+}
+
 // jsonForPost posts the form and returns the raw JSON
 // from the response.
 func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
