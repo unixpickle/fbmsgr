@@ -79,6 +79,38 @@ func decodeAttachment(raw map[string]interface{}) Attachment {
 	}
 }
 
+// decodeBlobAttachment decodes a blob_attachment,
+// attempting to use one of the built-in Attachment
+// structs if possible.
+func decodeBlobAttachment(raw map[string]interface{}) Attachment {
+	audio, err := decodeBlobAudioAttachment(raw)
+	if err == nil {
+		return audio
+	}
+	image, err := decodeBlobImageAttachment(raw)
+	if err == nil {
+		return image
+	}
+	file, err := decodeBlobFileAttachment(raw)
+	if err == nil {
+		return file
+	}
+	video, err := decodeBlobVideoAttachment(raw)
+	if err == nil {
+		return video
+	}
+
+	var typeObj struct {
+		TypeName string `json:"__typename"`
+	}
+	putJSONIntoObject(raw, &typeObj)
+
+	return &UnknownAttachment{
+		Type:    typeObj.TypeName,
+		RawData: raw,
+	}
+}
+
 // An UnknownAttachment is an Attachment of an unknown or
 // unsupported type.
 type UnknownAttachment struct {

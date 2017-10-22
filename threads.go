@@ -10,6 +10,7 @@ import (
 )
 
 const actionBufferSize = 500
+const actionLogDocID = "1547392382048831"
 
 // ThreadInfo stores information about a chat thread.
 // A chat thread is facebook's internal name for a
@@ -101,51 +102,44 @@ func (s *Session) Threads(offset, limit int) (res *ThreadListResult, err error) 
 	return &respObj.Payload, nil
 }
 
-// ActionLog reads the action backlog from a thread.
+// ActionLog reads the contents of a thread.
 //
 // The fbid parameter specifies the other user ID or the
 // group thread ID.
 //
 // The timestamp parameter specifies the timestamp of the
 // earliest action seen from the last call to ActionLog.
-// It may be the 0 time.
+// It may be the 0 time, in which case the most recent
+// actions will be fetched.
 //
-// Together, offset and limit define a message range.
-// The offset parameter specifies the offset from first
-// action in the log.
-// The limit parameter specifies the maximum number of
+// The limit parameter indicates the maximum number of
 // actions to fetch.
-func (s *Session) ActionLog(fbid string, timestamp time.Time, offset,
+func (s *Session) ActionLog(fbid string, timestamp time.Time,
 	limit int) (log []Action, err error) {
 	defer essentials.AddCtxTo("fbmsgr: action log", &err)
 
-	url := BaseURL + "/ajax/mercury/thread_info.php?dpr=1"
-	values, err := s.commonParams()
-	if err != nil {
-		return nil, err
+	var response struct {
+		Thread struct {
+			Messages struct {
+				Nodes []map[string]interface{} `json:"nodes"`
+			} `json:"messages"`
+		} `json:"message_thread"`
 	}
-	chatID := "thread_fbids][" + fbid
-	values.Add("messages["+chatID+"][offset]", strconv.Itoa(offset))
-	values.Add("messages["+chatID+"][limit]", strconv.Itoa(limit))
-	timestampKey := "messages[" + chatID + "][timestamp]"
+	params := map[string]interface{}{
+		"id":                 fbid,
+		"message_limit":      limit,
+		"load_messages":      1,
+		"load_read_receipts": true,
+	}
 	if timestamp.IsZero() {
-		values.Add(timestampKey, "")
+		params["before"] = nil
 	} else {
-		values.Add(timestampKey, strconv.FormatInt(timestamp.UnixNano()/1000000, 10))
+		params["before"] = strconv.FormatInt(timestamp.UnixNano()/1e6, 10)
 	}
-	response, err := s.jsonForPost(url, values)
-	if err != nil {
+	if err := s.graphQLDoc(actionLogDocID, params, &response); err != nil {
 		return nil, err
 	}
-	var messageData struct {
-		Payload struct {
-			Actions []map[string]interface{} `json:"actions"`
-		} `json:"payload"`
-	}
-	if err := json.Unmarshal(response, &messageData); err != nil {
-		return nil, err
-	}
-	for _, x := range messageData.Payload.Actions {
+	for _, x := range response.Thread.Messages.Nodes {
 		log = append(log, decodeAction(x))
 	}
 	return
@@ -176,7 +170,7 @@ func (s *Session) FullActionLog(fbid string, cancel <-chan struct{}) (<-chan Act
 		var lastTime time.Time
 		var offset int
 		for {
-			listing, err := s.ActionLog(fbid, lastTime, offset, actionBufferSize)
+			listing, err := s.ActionLog(fbid, lastTime, actionBufferSize)
 			if err != nil {
 				errRes <- err
 				return
@@ -186,6 +180,7 @@ func (s *Session) FullActionLog(fbid string, cancel <-chan struct{}) (<-chan Act
 			if offset > 0 && len(listing) > 0 {
 				listing = listing[:len(listing)-1]
 			}
+
 			if len(listing) == 0 {
 				return
 			}

@@ -105,6 +105,9 @@ func (s *Session) graphQLDoc(docID string, params map[string]interface{},
 				Message string `json:"message"`
 			} `json:"errors"`
 		} `json:"o0"`
+		Error struct {
+			Message string `json:"description"`
+		} `json:"error"`
 	}
 	respObj.Object.Data = dataOut
 	if err := decoder.Decode(&respObj); err != nil {
@@ -112,6 +115,8 @@ func (s *Session) graphQLDoc(docID string, params map[string]interface{},
 	}
 	if len(respObj.Object.Errors) > 0 {
 		return errors.New("GraphQL error: " + respObj.Object.Errors[0].Message)
+	} else if respObj.Error.Message != "" {
+		return errors.New("GraphQL error: " + respObj.Error.Message)
 	}
 	return nil
 }

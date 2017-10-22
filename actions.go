@@ -2,11 +2,12 @@ package fbmsgr
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 )
 
 const (
-	MessageActionType = "ma-type:user-generated-message"
+	MessageActionType = "UserMessage"
 )
 
 // An Action is something which occurred in a thread.
@@ -36,19 +37,18 @@ func decodeAction(m map[string]interface{}) Action {
 	ga := GenericAction{RawData: m}
 	switch ga.ActionType() {
 	case MessageActionType:
-		body, _ := m["body"].(string)
-		rawAttach, _ := m["attachments"].([]interface{})
-		var attachments []Attachment
+		res := &MessageAction{GenericAction: ga}
+		messageInfo, ok := m["message"].(map[string]interface{})
+		if ok {
+			res.Body, _ = messageInfo["text"].(string)
+		}
+		rawAttach, _ := m["blob_attachments"].([]interface{})
 		for _, x := range rawAttach {
 			if x, ok := x.(map[string]interface{}); ok {
-				attachments = append(attachments, decodeAttachment(x))
+				res.Attachments = append(res.Attachments, decodeBlobAttachment(x))
 			}
 		}
-		return &MessageAction{
-			GenericAction: ga,
-			Body:          body,
-			Attachments:   attachments,
-		}
+		return res
 	default:
 		return &ga
 	}
@@ -66,14 +66,16 @@ type GenericAction struct {
 
 // ActionType extracts the action's type.
 func (g *GenericAction) ActionType() string {
-	t, _ := g.RawData["action_type"].(string)
+	t, _ := g.RawData["__typename"].(string)
 	return t
 }
 
 // ActionTime extracts the action's timestamp.
 func (g *GenericAction) ActionTime() time.Time {
-	if ts, ok := g.RawData["timestamp"].(float64); ok {
-		return time.Unix(int64(ts/1000), (int64(ts)%1000)*1000000)
+	if ts, ok := g.RawData["timestamp_precise"].(string); ok {
+		if parsed, err := strconv.ParseInt(ts, 10, 64); err == nil {
+			return time.Unix(int64(parsed/1000), (int64(parsed)%1000)*1000000)
+		}
 	}
 	return time.Time{}
 }
@@ -86,8 +88,12 @@ func (g *GenericAction) MessageID() string {
 
 // AuthorFBID extracts the action's sender's FBID.
 func (g *GenericAction) AuthorFBID() string {
-	fbid, _ := g.RawData["author"].(string)
-	return stripFBIDPrefix(fbid)
+	senderInfo, ok := g.RawData["message_sender"].(map[string]interface{})
+	if ok {
+		fbid, _ := senderInfo["id"].(string)
+		return fbid
+	}
+	return ""
 }
 
 // RawFields returns the raw data.
