@@ -8,11 +8,20 @@ import (
 
 // These are attachment type IDs used by Messenger.
 const (
+	AudioAttachmentType         = "audio"
 	ImageAttachmentType         = "photo"
 	AnimatedImageAttachmentType = "animated_image"
 	StickerAttachmentType       = "sticker"
 	FileAttachmentType          = "file"
 	VideoAttachmentType         = "video"
+)
+
+const (
+	blobAudioAttachmentType         = "MessageAudio"
+	blobImageAttachmentType         = "MessageImage"
+	blobAnimatedImageAttachmentType = "MessageAnimatedImage"
+	blobFileAttachmentType          = "MessageFile"
+	blobVideoAttachmentType         = "MessageVideo"
 )
 
 // An Attachment is an abstract non-textual entity
@@ -28,13 +37,18 @@ type Attachment interface {
 	URL() string
 }
 
-// decodeAttachment decodes any attachment, attempting to
-// use one of the built-in Attachment structs if possible.
+// decodeAttachment decodes any attachment from an event,
+// attempting to use one of the built-in Attachment
+// structs if possible.
 func decodeAttachment(raw map[string]interface{}) Attachment {
 	if _, ok := raw["mercury"]; !ok {
 		raw = map[string]interface{}{"mercury": raw}
 	}
 
+	audio, err := decodeAudioAttachment(raw)
+	if err == nil {
+		return audio
+	}
 	image, err := decodeImageAttachment(raw)
 	if err == nil {
 		return image
@@ -88,6 +102,59 @@ func (u *UnknownAttachment) URL() string {
 // String returns a brief description of the attachment.
 func (u *UnknownAttachment) String() string {
 	return "UnknownAttachment<" + u.Type + ">"
+}
+
+// A AudioAttachment is an attachment for an audio file.
+type AudioAttachment struct {
+	Name     string
+	AudioURL string
+}
+
+func decodeAudioAttachment(raw map[string]interface{}) (*AudioAttachment, error) {
+	var obj struct {
+		Mercury struct {
+			BlobAttachment map[string]interface{} `json:"blob_attachment"`
+		} `json:"mercury"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	blob := obj.Mercury.BlobAttachment
+	return decodeBlobAudioAttachment(blob)
+}
+
+func decodeBlobAudioAttachment(raw map[string]interface{}) (*AudioAttachment, error) {
+	var obj struct {
+		TypeName string `json:"__typename"`
+		Name     string `json:"filename"`
+		URL      string `json:"playable_url"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	if obj.TypeName != blobAudioAttachmentType {
+		return nil, errors.New("unexpected type: " + obj.TypeName)
+	}
+	return &AudioAttachment{
+		Name:     obj.Name,
+		AudioURL: obj.URL,
+	}, nil
+}
+
+// AttachmentType returns the internal attachment type for
+// file attachments.
+func (f *AudioAttachment) AttachmentType() string {
+	return AudioAttachmentType
+}
+
+// URL returns the file download URL.
+func (f *AudioAttachment) URL() string {
+	return f.AudioURL
+}
+
+// String returns a brief description of the attachment.
+func (f *AudioAttachment) String() string {
+	return "AudioAttachment<" + f.URL() + ">"
 }
 
 // An ImageAttachment is an Attachment with specific info
@@ -160,6 +227,47 @@ func decodeImageAttachment(raw map[string]interface{}) (*ImageAttachment, error)
 		LargePreviewHeight: usableObject.Mercury.LargePreviewHeight,
 		ThumbnailURL:       usableObject.Mercury.ThumbnailURL,
 		HiResURL:           usableObject.Mercury.HiResURL,
+	}, nil
+}
+
+func decodeBlobImageAttachment(raw map[string]interface{}) (*ImageAttachment, error) {
+	var usableObject struct {
+		TypeName       string     `json:"__typename"`
+		Preview        imageField `json:"preview"`
+		LargePreview   imageField `json:"large_preview"`
+		AnimatedImage  imageField `json:"animated_image"`
+		Thumbnail      imageField `json:"thumbnail"`
+		FBID           string     `json:"legacy_attachment_id"`
+		OrigDimensions struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		} `json:"original_dimensions"`
+	}
+	if err := putJSONIntoObject(raw, &usableObject); err != nil {
+		return nil, err
+	}
+	if usableObject.TypeName != blobImageAttachmentType &&
+		usableObject.TypeName != blobAnimatedImageAttachmentType {
+		return nil, errors.New("unexpected type: " + usableObject.TypeName)
+	}
+
+	if usableObject.AnimatedImage.URI != "" {
+		usableObject.LargePreview = usableObject.AnimatedImage
+	}
+
+	return &ImageAttachment{
+		FBID:               canonicalFBID(usableObject.FBID),
+		Width:              usableObject.OrigDimensions.X,
+		Height:             usableObject.OrigDimensions.X,
+		Animated:           usableObject.TypeName == blobAnimatedImageAttachmentType,
+		PreviewURL:         usableObject.Preview.URI,
+		PreviewWidth:       usableObject.Preview.Width,
+		PreviewHeight:      usableObject.Preview.Height,
+		LargePreviewURL:    usableObject.LargePreview.URI,
+		LargePreviewWidth:  usableObject.LargePreview.Width,
+		LargePreviewHeight: usableObject.LargePreview.Height,
+		ThumbnailURL:       usableObject.Thumbnail.URI,
+		HiResURL:           usableObject.LargePreview.URI,
 	}, nil
 }
 
@@ -292,6 +400,24 @@ func decodeFileAttachment(raw map[string]interface{}) (*FileAttachment, error) {
 	}, nil
 }
 
+func decodeBlobFileAttachment(raw map[string]interface{}) (*FileAttachment, error) {
+	var obj struct {
+		TypeName string `json:"__typename"`
+		Name     string `json:"filename"`
+		URL      string `json:"url"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	if obj.TypeName != blobFileAttachmentType {
+		return nil, errors.New("unexpected type: " + obj.TypeName)
+	}
+	return &FileAttachment{
+		Name:    obj.Name,
+		FileURL: obj.URL,
+	}, nil
+}
+
 // AttachmentType returns the internal attachment type for
 // file attachments.
 func (f *FileAttachment) AttachmentType() string {
@@ -377,6 +503,44 @@ func decodeVideoAttachment(raw map[string]interface{}) (*VideoAttachment, error)
 	}, nil
 }
 
+func decodeBlobVideoAttachment(raw map[string]interface{}) (*VideoAttachment, error) {
+	var obj struct {
+		TypeName       string     `json:"__typename"`
+		Name           string     `json:"filename"`
+		URL            string     `json:"playable_url"`
+		ChatImage      imageField `json:"chat_image"`
+		LargeImage     imageField `json:"large_image"`
+		InboxImage     imageField `json:"inbox_image"`
+		FBID           string     `json:"legacy_attachment_id"`
+		OrigDimensions struct {
+			X int `json:"x"`
+			Y int `json:"y"`
+		} `json:"original_dimensions"`
+	}
+	if err := putJSONIntoObject(raw, &obj); err != nil {
+		return nil, err
+	}
+	if obj.TypeName != blobVideoAttachmentType {
+		return nil, errors.New("unexpected type: " + obj.TypeName)
+	}
+	return &VideoAttachment{
+		FBID:     obj.FBID,
+		Name:     obj.Name,
+		VideoURL: obj.URL,
+
+		Width:  obj.OrigDimensions.X,
+		Height: obj.OrigDimensions.Y,
+
+		PreviewURL:         obj.ChatImage.URI,
+		PreviewWidth:       obj.ChatImage.Width,
+		PreviewHeight:      obj.ChatImage.Height,
+		LargePreviewURL:    obj.LargeImage.URI,
+		LargePreviewWidth:  obj.LargeImage.Width,
+		LargePreviewHeight: obj.LargeImage.Height,
+		ThumbnailURL:       obj.ChatImage.URI,
+	}, nil
+}
+
 // AttachmentType returns the internal attachment type for
 // video attachments.
 func (v *VideoAttachment) AttachmentType() string {
@@ -391,4 +555,10 @@ func (v *VideoAttachment) URL() string {
 // String returns a brief description of the attachment.
 func (v *VideoAttachment) String() string {
 	return "VideoAttachment<" + v.URL() + ">"
+}
+
+type imageField struct {
+	URI    string `json:"uri"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 }
