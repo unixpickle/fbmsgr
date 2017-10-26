@@ -25,8 +25,6 @@ Currently, the API is fairly reliable and can perform a bunch of basic functiona
 
 # TODO
 
- * Support sticker attachments in threads
-   * Use "sticker" field in a message node.
  * Support emojis in threads (i.e. the like button)
  * In FullActionLog, remove *all* duplicates, incase two messages have the same timestamp.
  * Emoji/sticker transmission

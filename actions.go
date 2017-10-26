@@ -32,7 +32,7 @@ type Action interface {
 }
 
 // decodeAction creates the most appropriate Action type
-// for the given action.
+// for the given node in a thread.
 func decodeAction(m map[string]interface{}) Action {
 	ga := GenericAction{RawData: m}
 	switch ga.ActionType() {
@@ -46,6 +46,13 @@ func decodeAction(m map[string]interface{}) Action {
 		for _, x := range rawAttach {
 			if x, ok := x.(map[string]interface{}); ok {
 				res.Attachments = append(res.Attachments, decodeBlobAttachment(x))
+			}
+		}
+		sticker, ok := m["sticker"].(map[string]interface{})
+		if ok {
+			sticker, err := decodeThreadStickerAttachment(sticker)
+			if err == nil {
+				res.Attachments = append(res.Attachments, sticker)
 			}
 		}
 		return res

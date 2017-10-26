@@ -349,22 +349,8 @@ type StickerAttachment struct {
 func decodeStickerAttachment(raw map[string]interface{}) (*StickerAttachment, error) {
 	var usableObject struct {
 		Mercury struct {
-			AttachType string `json:"attach_type"`
-			URL        string `json:"url"`
-			Meta       struct {
-				StickerID         float64 `json:"stickerID"`
-				PackID            float64 `json:"packID"`
-				FrameCount        int     `json:"frameCount"`
-				FrameRate         int     `json:"frameRate"`
-				FramesPerRow      int     `json:"framesPerRow"`
-				FramesPerCol      int     `json:"framesPerCol"`
-				Width             int     `json:"width"`
-				Height            int     `json:"height"`
-				SpriteURI         string  `json:"spriteURI"`
-				SpriteURI2x       string  `json:"spriteURI2x"`
-				PaddedSpriteURI   string  `json:"paddedSpriteURI"`
-				PaddedSpriteURI2x string  `json:"paddedSpriteURI2x"`
-			} `json:"metadata"`
+			AttachType string                 `json:"attach_type"`
+			Attachment map[string]interface{} `json:"sticker_attachment"`
 		} `json:"mercury"`
 	}
 	if err := putJSONIntoObject(raw, &usableObject); err != nil {
@@ -373,20 +359,44 @@ func decodeStickerAttachment(raw map[string]interface{}) (*StickerAttachment, er
 	if usableObject.Mercury.AttachType != StickerAttachmentType {
 		return nil, errors.New("unexpected type: " + usableObject.Mercury.AttachType)
 	}
+	return decodeThreadStickerAttachment(usableObject.Mercury.Attachment)
+}
+
+func decodeThreadStickerAttachment(raw map[string]interface{}) (*StickerAttachment, error) {
+	var usableObject struct {
+		StickerID int64 `json:"id,string"`
+		Pack      struct {
+			ID int64 `json:"id,string"`
+		} `json:"pack"`
+		URL                 string   `json:"url"`
+		FrameCount          int      `json:"frame_count"`
+		FrameRate           int      `json:"frame_rate"`
+		FramesPerRow        int      `json:"frames_per_row"`
+		FramesPerCol        int      `json:"frames_per_column"`
+		Width               int      `json:"width"`
+		Height              int      `json:"height"`
+		SpriteImage         uriField `json:"sprite_image"`
+		SpritImage2x        uriField `json:"sprite_image_2x"`
+		PaddedSpriteImage   uriField `json:"padded_sprite_image"`
+		PaddedSpriteImage2x uriField `json:"padded_sprite_image_2x"`
+	}
+	if err := putJSONIntoObject(raw, &usableObject); err != nil {
+		return nil, err
+	}
 	return &StickerAttachment{
-		RawURL:            usableObject.Mercury.URL,
-		StickerID:         int64(usableObject.Mercury.Meta.StickerID),
-		PackID:            int64(usableObject.Mercury.Meta.PackID),
-		SpriteURI:         usableObject.Mercury.Meta.SpriteURI,
-		SpriteURI2x:       usableObject.Mercury.Meta.SpriteURI2x,
-		PaddedSpriteURI:   usableObject.Mercury.Meta.PaddedSpriteURI,
-		PaddedSpriteURI2x: usableObject.Mercury.Meta.PaddedSpriteURI2x,
-		FrameCount:        usableObject.Mercury.Meta.FrameCount,
-		FrameRate:         usableObject.Mercury.Meta.FrameRate,
-		FramesPerRow:      usableObject.Mercury.Meta.FramesPerRow,
-		FramesPerCol:      usableObject.Mercury.Meta.FramesPerCol,
-		Width:             usableObject.Mercury.Meta.Width,
-		Height:            usableObject.Mercury.Meta.Height,
+		RawURL:            usableObject.URL,
+		StickerID:         usableObject.StickerID,
+		PackID:            usableObject.Pack.ID,
+		SpriteURI:         usableObject.SpriteImage.URI,
+		SpriteURI2x:       usableObject.SpritImage2x.URI,
+		PaddedSpriteURI:   usableObject.PaddedSpriteImage.URI,
+		PaddedSpriteURI2x: usableObject.PaddedSpriteImage2x.URI,
+		FrameCount:        usableObject.FrameCount,
+		FrameRate:         usableObject.FrameRate,
+		FramesPerRow:      usableObject.FramesPerRow,
+		FramesPerCol:      usableObject.FramesPerCol,
+		Width:             usableObject.Width,
+		Height:            usableObject.Height,
 	}, nil
 }
 
@@ -593,4 +603,8 @@ type imageField struct {
 	URI    string `json:"uri"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+}
+
+type uriField struct {
+	URI string `json:"uri"`
 }
