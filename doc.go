@@ -106,23 +106,7 @@
 //
 // To list the threads (conversations) a user is in, you
 // can use the Threads method to fetch a subset of threads
-// at a time.
-// For example, you can print out the IDs of every thread
-// as follows:
-//
-//     var idx int
-//     for {
-//         listing, err := sess.Threads(idx, 20)
-//         if err != nil {
-//             panic(err)
-//         }
-//         for _, entry := range listing.Threads {
-//             fmt.Println("Thread with ID", entry.ThreadFBID)
-//         }
-//         if len(listing.Threads) < 20 {
-//             break
-//         }
-//         idx += len(listing.Threads)
-//     }
+// at a time. You can also use the AllThreads method to
+// fetch all the threads at once.
 //
 package fbmsgr

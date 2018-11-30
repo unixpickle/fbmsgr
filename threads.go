@@ -1,105 +1,123 @@
 package fbmsgr
 
 import (
-	"encoding/json"
-	"errors"
 	"strconv"
 	"time"
 
 	"github.com/unixpickle/essentials"
 )
 
-const actionBufferSize = 500
-const actionLogDocID = "1547392382048831"
+const (
+	threadBufferSize = 100
+	actionBufferSize = 500
+)
+
+const (
+	actionLogDocID = "1547392382048831"
+	threadLogDocID = "2276493972392017"
+)
 
 // ThreadInfo stores information about a chat thread.
 // A chat thread is facebook's internal name for a
 // conversation (either a group chat or a 1-on-1).
 type ThreadInfo struct {
-	ThreadID   string `json:"thread_id"`
-	ThreadFBID string `json:"thread_fbid"`
-	Name       string `json:"name"`
+	ThreadFBID string
 
-	// OtherUserFBID is nil for group chats.
-	OtherUserFBID *string `json:"other_user_fbid"`
+	// Other user (nil for group chats).
+	OtherUserID *string
 
-	// Participants contains a list of FBIDs.
-	Participants []string `json:"participants"`
+	// Optional custom name for the chat.
+	Name *string
 
-	// Snippet stores the last message sent in the thread.
-	Snippet       string `json:"snippet"`
-	SnippetSender string `json:"snippet_sender"`
+	// Optional image URL.
+	Image *string
 
-	UnreadCount  int `json:"unread_count"`
-	MessageCount int `json:"message_count"`
+	Participants []*ParticipantInfo
 
-	Timestamp       float64 `json:"timestamp"`
-	ServerTimestamp float64 `json:"server_timestamp"`
-}
+	Snippet       string
+	SnippetSender string
 
-func (t *ThreadInfo) canonicalizeFBIDs() {
-	t.SnippetSender = stripFBIDPrefix(t.SnippetSender)
-	for i, p := range t.Participants {
-		t.Participants[i] = stripFBIDPrefix(p)
-	}
+	UnreadCount  int
+	MessageCount int
+
+	UpdatedTime time.Time
 }
 
 // ParticipantInfo stores information about a user.
 type ParticipantInfo struct {
-	// ID is typically "fbid:..."
-	ID string `json:"id"`
+	FBID   string
+	Gender string
+	URL    string
 
-	FBID   string `json:"fbid"`
-	Gender int    `json:"gender"`
-	HREF   string `json:"href"`
+	ImageSrc    string
+	BigImageSrc string
 
-	ImageSrc    string `json:"image_src"`
-	BigImageSrc string `json:"big_image_src"`
-
-	Name      string `json:"name"`
-	ShortName string `json:"short_name"`
-}
-
-// A ThreadListResult stores the result of listing the
-// user's chat threads.
-type ThreadListResult struct {
-	Threads      []*ThreadInfo      `json:"threads"`
-	Participants []*ParticipantInfo `json:"participants"`
+	Username  string
+	Name      string
+	ShortName string
 }
 
 // Threads reads a range of the user's chat threads.
-// The offset specifiecs the index of the first thread
-// to fetch, starting at 0.
+//
+// The timestamp parameter specifies the timestamp of the
+// earliest thread seen from the last call to Threads.
+// It may be the 0 time, in which case the most recent
+// threads will be fetched.
+//
 // The limit specifies the maximum number of threads.
-func (s *Session) Threads(offset, limit int) (res *ThreadListResult, err error) {
+func (s *Session) Threads(timestamp time.Time, limit int) (res []*ThreadInfo, err error) {
 	defer essentials.AddCtxTo("fbmsgr: threads", &err)
-	params, err := s.commonParams()
-	if err != nil {
+
+	var response struct {
+		Viewer struct {
+			MessageThreads struct {
+				Nodes []*threadInfoResult `json:"nodes"`
+			} `json:"message_threads"`
+		} `json:"viewer"`
+	}
+	params := map[string]interface{}{
+		"limit": limit,
+		"tags":  []string{"INBOX"},
+		"includeDeliveryReceipts": true,
+		"includeSeqID":            false,
+	}
+	if timestamp.IsZero() {
+		params["before"] = nil
+	} else {
+		params["before"] = strconv.FormatInt(timestamp.UnixNano()/1e6, 10)
+	}
+	if err := s.graphQLDoc(threadLogDocID, params, &response); err != nil {
 		return nil, err
 	}
-	params.Set("inbox[filter]", "")
-	params.Set("inbox[offset]", strconv.Itoa(offset))
-	params.Set("inbox[limit]", strconv.Itoa(limit))
-	reqURL := BaseURL + "/ajax/mercury/threadlist_info.php?dpr=1"
-	body, err := s.jsonForPost(reqURL, params)
-	if err != nil {
-		return nil, err
+	for _, result := range response.Viewer.MessageThreads.Nodes {
+		res = append(res, result.ThreadInfo())
+	}
+	return
+}
+
+// AllThreads reads the full list of chat threads.
+func (s *Session) AllThreads() (res []*ThreadInfo, err error) {
+	defer essentials.AddCtxTo("fbmsgr: all threads", &err)
+
+	var lastTime time.Time
+	for {
+		listing, err := s.Threads(lastTime, threadBufferSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(res) > 0 && len(listing) > 0 {
+			if res[len(res)-1].ThreadFBID == listing[0].ThreadFBID {
+				listing = listing[1:]
+			}
+		}
+		res = append(res, listing...)
+		if len(listing) < threadBufferSize {
+			break
+		}
+		lastTime = listing[len(listing)-1].UpdatedTime
 	}
 
-	var respObj struct {
-		Payload ThreadListResult `json:"payload"`
-	}
-	if err := json.Unmarshal(body, &respObj); err != nil {
-		return nil, errors.New("parse json: " + err.Error())
-	}
-	for _, x := range respObj.Payload.Participants {
-		x.FBID = stripFBIDPrefix(x.FBID)
-	}
-	for _, x := range respObj.Payload.Threads {
-		x.canonicalizeFBIDs()
-	}
-
-	return &respObj.Payload, nil
+	return res, nil
 }
 
 // ActionLog reads the contents of a thread.
@@ -220,4 +238,92 @@ func (s *Session) DeleteMessage(id string) (err error) {
 	values.Set("message_ids[0]", id)
 	_, err = s.jsonForPost(url, values)
 	return err
+}
+
+type threadInfoResult struct {
+	ThreadKey struct {
+		ThreadFBID  *string `json:"thread_fbid"`
+		OtherUserID *string `json:"other_user_id"`
+	} `json:"thread_key"`
+	Name        *string `json:"name"`
+	UpdatedTime string  `json:"updated_time_precise"`
+	LastMessage struct {
+		Nodes []struct {
+			Snippet       string `json:"snippet"`
+			MessageSender struct {
+				MessagingActor struct {
+					ID string `json:"id"`
+				} `json:"messaging_actor"`
+			} `json:"message_sender"`
+		} `json:"nodes"`
+	}
+	UnreadCount   int `json:"unread_count"`
+	MessagesCount int `json:"messages_count"`
+	Image         *struct {
+		URI string `json:"uri"`
+	} `json:"image"`
+	Participants struct {
+		Edges []struct {
+			Node struct {
+				MessagingActor struct {
+					ID          string `json:"id"`
+					Name        string `json:"name"`
+					Gender      string `json:"gender"`
+					URL         string `json:"url"`
+					BigImageSrc *struct {
+						URI string `json:"uri"`
+					} `json:"big_image_src"`
+					ImageSrc *struct {
+						URI string `json:"uri"`
+					} `json:"image_src"`
+					ShortName string `json:"short_name"`
+					Username  string `json:"username"`
+				} `json:"messaging_actor"`
+			} `json:"node"`
+		} `json:"edges"`
+	} `json:"all_participants"`
+}
+
+func (t *threadInfoResult) ThreadInfo() *ThreadInfo {
+	res := &ThreadInfo{
+		OtherUserID:  t.ThreadKey.OtherUserID,
+		Name:         t.Name,
+		UnreadCount:  t.UnreadCount,
+		MessageCount: t.MessagesCount,
+	}
+	if t.ThreadKey.ThreadFBID != nil {
+		res.ThreadFBID = *t.ThreadKey.ThreadFBID
+	} else {
+		res.ThreadFBID = *t.ThreadKey.OtherUserID
+	}
+	if t.Image != nil {
+		res.Image = &t.Image.URI
+	}
+	if len(t.LastMessage.Nodes) == 1 {
+		res.Snippet = t.LastMessage.Nodes[0].Snippet
+		res.SnippetSender = t.LastMessage.Nodes[0].MessageSender.MessagingActor.ID
+	}
+	fullTime, _ := strconv.ParseInt(t.UpdatedTime, 10, 64)
+	res.UpdatedTime = time.Unix(fullTime/1000, (fullTime%1000)*1e6)
+
+	for _, node := range t.Participants.Edges {
+		pInfo := node.Node.MessagingActor
+		p := &ParticipantInfo{
+			FBID:      pInfo.ID,
+			Gender:    pInfo.Gender,
+			URL:       pInfo.URL,
+			Username:  pInfo.Username,
+			Name:      pInfo.Name,
+			ShortName: pInfo.ShortName,
+		}
+		if pInfo.BigImageSrc != nil {
+			p.BigImageSrc = pInfo.BigImageSrc.URI
+		}
+		if pInfo.ImageSrc != nil {
+			p.BigImageSrc = pInfo.ImageSrc.URI
+		}
+		res.Participants = append(res.Participants, p)
+	}
+
+	return res
 }
