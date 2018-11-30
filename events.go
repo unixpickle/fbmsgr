@@ -69,8 +69,14 @@ type TypingEvent struct {
 // DeleteMessageEvent indicates that a message has been
 // deleted.
 type DeleteMessageEvent struct {
-	MessageIDs    []string
-	UpdatedThread *ThreadInfo
+	MessageIDs []string
+
+	// If non-empty, this specifies the group chat ID.
+	GroupThread string
+
+	// If non-empty, this specifies the other user in a
+	// one-on-one chat (as opposed to a group chat).
+	OtherUser string
 }
 
 // An EventStream is a live stream of events.
@@ -205,11 +211,6 @@ func (e *EventStream) dispatchMessages(msgs []map[string]interface{}) {
 			e.dispatchBuddylistOverlay(m)
 		case "ttyp", "typ":
 			e.dispatchTyping(m)
-		case "messaging":
-			evt, _ := m["event"].(string)
-			if evt == "delete_messages" {
-				e.dispatchDelete(m)
-			}
 		}
 	}
 }
@@ -217,6 +218,9 @@ func (e *EventStream) dispatchMessages(msgs []map[string]interface{}) {
 func (e *EventStream) dispatchDelta(obj map[string]interface{}) {
 	var deltaObj struct {
 		Delta struct {
+			Class string `json:"class"`
+
+			// For message events.
 			Body        string                   `json:"body"`
 			Attachments []map[string]interface{} `json:"attachments"`
 			Meta        struct {
@@ -227,13 +231,31 @@ func (e *EventStream) dispatchDelta(obj map[string]interface{}) {
 					OtherUser  string `json:"otherUserFbId"`
 				} `json:"threadKey"`
 			} `json:"messageMetadata"`
+
+			// For delete events.
+			MessageIDs []string `json:"messageIds"`
+			ThreadKey  struct {
+				ThreadFBID string `json:"threadFbId"`
+				OtherUser  string `json:"otherUserFbId"`
+			} `json:"threadKey"`
 		} `json:"delta"`
 	}
 
 	if putJSONIntoObject(obj, &deltaObj) != nil {
 		return
 	}
-	if len(deltaObj.Delta.Attachments) == 0 && deltaObj.Delta.Body == "" {
+
+	if deltaObj.Delta.Class == "MessageDelete" {
+		e.emitEvent(DeleteMessageEvent{
+			MessageIDs:  deltaObj.Delta.MessageIDs,
+			GroupThread: deltaObj.Delta.ThreadKey.ThreadFBID,
+			OtherUser:   deltaObj.Delta.ThreadKey.OtherUser,
+		})
+		return
+	}
+
+	if (len(deltaObj.Delta.Attachments) == 0 && deltaObj.Delta.Body == "") ||
+		deltaObj.Delta.Class != "NewMessage" {
 		return
 	}
 
@@ -292,21 +314,6 @@ func (e *EventStream) dispatchTyping(m map[string]interface{}) {
 			Typing:     obj.State == 1,
 		})
 	}
-}
-
-func (e *EventStream) dispatchDelete(m map[string]interface{}) {
-	var obj struct {
-		IDs    []string    `json:"mids"`
-		Thread *ThreadInfo `json:"updated_thread"`
-	}
-	if putJSONIntoObject(m, &obj) != nil || obj.Thread == nil {
-		return
-	}
-	obj.Thread.canonicalizeFBIDs()
-	e.emitEvent(DeleteMessageEvent{
-		MessageIDs:    obj.IDs,
-		UpdatedThread: obj.Thread,
-	})
 }
 
 func (e *EventStream) checkClosed() bool {
