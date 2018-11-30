@@ -256,7 +256,7 @@ type threadInfoResult struct {
 				} `json:"messaging_actor"`
 			} `json:"message_sender"`
 		} `json:"nodes"`
-	}
+	} `json:"last_message"`
 	UnreadCount   int `json:"unread_count"`
 	MessagesCount int `json:"messages_count"`
 	Image         *struct {
