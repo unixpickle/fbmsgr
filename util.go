@@ -30,7 +30,7 @@ func (s *Session) fetchDTSG() (string, error) {
 			return s.fbDTSG, nil
 		}
 	}
-	homepage, err := s.client.Get(BaseURL)
+	homepage, err := s.Client.Get(BaseURL)
 	if homepage != nil {
 		defer homepage.Body.Close()
 	}
@@ -91,7 +91,7 @@ func (s *Session) graphQLDoc(docID string, params map[string]interface{},
 	}
 	reqParams.Add("queries", string(reqJSON))
 
-	resp, err := s.client.PostForm(BaseURL+"/api/graphqlbatch", reqParams)
+	resp, err := s.Client.PostForm(BaseURL+"/api/graphqlbatch", reqParams)
 	if err != nil {
 		return err
 	}
@@ -124,12 +124,12 @@ func (s *Session) graphQLDoc(docID string, params map[string]interface{},
 // jsonForPost posts the form and returns the raw JSON
 // from the response.
 func (s *Session) jsonForPost(url string, params url.Values) ([]byte, error) {
-	return jsonForResp(s.client.PostForm(url, params))
+	return jsonForResp(s.Client.PostForm(url, params))
 }
 
 // jsonForGet runs a get and returns the raw JSON.
 func (s *Session) jsonForGet(url string) ([]byte, error) {
-	return jsonForResp(s.client.Get(url))
+	return jsonForResp(s.Client.Get(url))
 }
 
 // jsonForGetContext is like jsonForGet but with an added
@@ -140,7 +140,7 @@ func (s *Session) jsonForGetContext(ctx context.Context, url string) ([]byte, er
 		return nil, err
 	}
 	req = req.WithContext(ctx)
-	return jsonForResp(s.client.Do(req))
+	return jsonForResp(s.Client.Do(req))
 }
 
 // jsonForResp returns the json for the response.

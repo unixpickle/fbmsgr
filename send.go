@@ -197,7 +197,7 @@ func (s *Session) Upload(filename string, file io.Reader) (res *UploadResult, er
 		_, err = io.Copy(sender, file)
 	}()
 
-	body, err := jsonForResp(s.client.Do(req))
+	body, err := jsonForResp(s.Client.Do(req))
 	if err != nil {
 		return nil, err
 	}

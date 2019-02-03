@@ -27,7 +27,7 @@ const (
 // A Session is an authenticated session with the
 // messenger backend.
 type Session struct {
-	client *http.Client
+	Client *http.Client
 
 	userID string
 
@@ -116,7 +116,7 @@ func sessionForHomepage(c *http.Client, body io.Reader) (*Session, error) {
 		return nil, errors.New("find USER_ID: " + err.Error())
 	}
 	return &Session{
-		client:  c,
+		Client:  c,
 		userID:  userID,
 		randGen: rand.New(rand.NewSource(time.Now().UnixNano())),
 	}, nil
